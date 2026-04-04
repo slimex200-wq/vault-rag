@@ -29,6 +29,47 @@ def cli() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Internal helper: compile + index a single note by absolute path
+# ---------------------------------------------------------------------------
+
+
+def _auto_compile_and_index(note_path: "Path", config: "VaultConfig") -> None:
+    """Compile and embed a single note. Prints results to stdout."""
+    from anthropic import Anthropic
+
+    from vault_rag.engine.compiler import Compiler
+    from vault_rag.engine.indexer import Indexer, create_openai_embed_fn
+    from vault_rag.ingest.scanner import VaultScanner
+    from vault_rag.store.vector_store import VectorStore
+
+    scanner = VaultScanner(config)
+    notes = scanner.scan()
+    target = next(
+        (n for n in notes if n.path.resolve() == note_path.resolve()),
+        None,
+    )
+
+    if target is None:
+        click.echo("  Warning: note not found in vault scan — skipping compile.", err=True)
+        return
+
+    client = Anthropic()
+    compiler = Compiler(client=client, model=config.compile_model)
+    result = compiler.compile(target)
+    click.echo(f"  Summary: {result.summary}")
+    if result.tags:
+        click.echo(f"  Tags: {', '.join(result.tags)}")
+    if result.suggested_links:
+        click.echo(f"  Links: {', '.join(result.suggested_links)}")
+
+    vs = VectorStore(persist_dir=config.chroma_path)
+    embed_fn = create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
+    indexer = Indexer(config=config, vector_store=vs, embed_fn=embed_fn)
+    indexer.index([target])
+    click.echo("  Indexed.")
+
+
+# ---------------------------------------------------------------------------
 # scan
 # ---------------------------------------------------------------------------
 
@@ -229,14 +270,18 @@ def ask_cmd(question: str) -> None:
 @cli.command("clip")
 @click.argument("url")
 @click.option("--folder", default="Reference", show_default=True, help="Target folder in vault")
-def clip_cmd(url: str, folder: str) -> None:
+@click.option("--no-compile", is_flag=True, default=False, help="Skip auto-compile and index")
+def clip_cmd(url: str, folder: str, no_compile: bool) -> None:
     """Clip a web page into the vault as a markdown note."""
     from vault_rag.ingest.web_clipper import WebClipper
 
     config = _get_config()
     clipper = WebClipper(vault_path=config.vault_path)
     note_path = clipper.clip(url=url, folder=folder)
-    click.echo(f"Clipped: {note_path}")
+    click.echo(f"Clipped: {note_path.relative_to(config.vault_path)}")
+
+    if not no_compile:
+        _auto_compile_and_index(note_path, config)
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +292,8 @@ def clip_cmd(url: str, folder: str) -> None:
 @cli.command("ingest-pdf")
 @click.argument("pdf_path", type=click.Path(exists=True, path_type=Path))
 @click.option("--folder", default="Research", show_default=True, help="Target folder in vault")
-def ingest_pdf_cmd(pdf_path: Path, folder: str) -> None:
+@click.option("--no-compile", is_flag=True, default=False, help="Skip auto-compile and index")
+def ingest_pdf_cmd(pdf_path: Path, folder: str, no_compile: bool) -> None:
     """Ingest a PDF file into the vault as a markdown note."""
     from vault_rag.ingest.pdf_reader import PDFReader
 
@@ -258,7 +304,10 @@ def ingest_pdf_cmd(pdf_path: Path, folder: str) -> None:
         vault_path=config.vault_path,
         folder=folder,
     )
-    click.echo(f"Ingested: {note_path}")
+    click.echo(f"Ingested: {note_path.relative_to(config.vault_path)}")
+
+    if not no_compile:
+        _auto_compile_and_index(note_path, config)
 
 
 # ---------------------------------------------------------------------------
@@ -299,3 +348,39 @@ def compile_cmd(path: Path) -> None:
         click.echo(f"Tags: {', '.join(result.tags)}")
     if result.suggested_links:
         click.echo(f"Suggested links: {', '.join(result.suggested_links)}")
+
+
+# ---------------------------------------------------------------------------
+# compile-new
+# ---------------------------------------------------------------------------
+
+
+@cli.command("compile-new")
+@click.option("--dry-run", is_flag=True, default=False, help="Show what would be compiled without doing it")
+def compile_new_cmd(dry_run: bool) -> None:
+    """Auto-compile all untagged notes."""
+    from vault_rag.ingest.scanner import VaultScanner
+
+    config = _get_config()
+    scanner = VaultScanner(config)
+    notes = scanner.scan()
+    untagged = [n for n in notes if not n.tags]
+    click.echo(f"Found {len(untagged)} untagged notes")
+
+    if dry_run:
+        for n in untagged[:20]:
+            click.echo(f"  {n.relative_path}")
+        return
+
+    from anthropic import Anthropic
+
+    from vault_rag.engine.compiler import Compiler
+
+    client = Anthropic()
+    compiler = Compiler(client=client, model=config.compile_model)
+
+    for i, note in enumerate(untagged):
+        result = compiler.compile(note)
+        click.echo(f"  [{i + 1}/{len(untagged)}] {note.relative_path}")
+        if result.tags:
+            click.echo(f"    Tags: {', '.join(result.tags)}")

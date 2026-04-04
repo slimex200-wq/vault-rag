@@ -15,8 +15,9 @@ _INVALID_CHARS_RE = re.compile(r'[<>:"/\\|?*]')
 class WebClipper:
     """Clip a web page (via trafilatura) and save it as a markdown note in *vault_path*."""
 
-    def __init__(self, vault_path: Path) -> None:
+    def __init__(self, vault_path: Path, compile_fn=None) -> None:
         self.vault_path = vault_path
+        self.compile_fn = compile_fn
 
     # ------------------------------------------------------------------
     # Public API
@@ -65,6 +66,8 @@ class WebClipper:
             self._render(title=title, url=url, clipped_date=clipped_date, body=text),
             encoding="utf-8",
         )
+        if self.compile_fn is not None:
+            self.compile_fn(note_path)
         return note_path
 
     # ------------------------------------------------------------------

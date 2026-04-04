@@ -19,6 +19,9 @@ class PDFResult:
 class PDFReader:
     """Extract text from PDF files using PyMuPDF."""
 
+    def __init__(self, compile_fn=None) -> None:
+        self.compile_fn = compile_fn
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -80,6 +83,8 @@ class PDFReader:
             self._render(title=title, source=str(pdf_path), result=result),
             encoding="utf-8",
         )
+        if self.compile_fn is not None:
+            self.compile_fn(note_path)
         return note_path
 
     # ------------------------------------------------------------------
