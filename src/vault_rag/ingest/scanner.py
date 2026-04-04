@@ -17,6 +17,7 @@ _RE_YAML_TAGS = re.compile(r"tags:\s*\[([^\]]*)\]")
 _RE_INLINE_TAGS = re.compile(r"(?:^|\s)#([a-zA-Z가-힣][\w가-힣-]*)", re.MULTILINE)
 _RE_WIKILINKS = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 _RE_H1 = re.compile(r"^#\s+(.+)$", re.MULTILINE)
+_RE_CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
 
 
 # ---------------------------------------------------------------------------
@@ -119,8 +120,10 @@ class VaultScanner:
         # --- combined, deduplicated, order-preserving ---
         all_tags = list(dict.fromkeys(fm_tags + inline_tags))
 
-        # --- wikilinks (search full content so links in frontmatter are also captured) ---
-        links = _RE_WIKILINKS.findall(content)
+        # --- wikilinks (strip code blocks first, then extract and clean) ---
+        content_no_code = _RE_CODE_BLOCK.sub("", content)
+        raw_links = _RE_WIKILINKS.findall(content_no_code)
+        links = [link.strip().rstrip("\\") for link in raw_links]
 
         # --- title: first H1 in body, fallback to stem ---
         h1 = _RE_H1.search(body)

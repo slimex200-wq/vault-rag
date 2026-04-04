@@ -114,3 +114,33 @@ def test_full_report() -> None:
     assert "B" not in broken_targets
 
     assert "orphan.md" in report["orphan_notes"]
+
+
+# ---------------------------------------------------------------------------
+# 6. path-based wikilinks should not be broken
+# ---------------------------------------------------------------------------
+
+def test_path_based_links_not_broken() -> None:
+    """[[Projects/flatsnap/INDEX]] should resolve to Projects/flatsnap/INDEX.md"""
+    notes = [
+        _note("Hub", "hub.md", links=["Projects/flatsnap/INDEX"]),
+        _note("FlatSnap INDEX", "Projects/flatsnap/INDEX.md"),
+    ]
+    hc = HealthChecker(notes)
+    broken = hc.broken_links()
+    assert len(broken) == 0
+
+
+# ---------------------------------------------------------------------------
+# 7. backslash-suffixed path links should not be broken
+# ---------------------------------------------------------------------------
+
+def test_backslash_links_not_broken() -> None:
+    """[[Projects/flatsnap/INDEX\\]] should still resolve."""
+    notes = [
+        _note("Hub", "hub.md", links=["Projects/flatsnap/INDEX\\"]),
+        _note("FlatSnap INDEX", "Projects/flatsnap/INDEX.md"),
+    ]
+    hc = HealthChecker(notes)
+    broken = hc.broken_links()
+    assert len(broken) == 0

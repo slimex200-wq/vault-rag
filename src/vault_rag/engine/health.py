@@ -24,6 +24,17 @@ class HealthChecker:
         self._stems: set[str] = {_normalize(n.path.stem) for n in notes}
         self._paths: set[str] = {n.relative_path for n in notes}
 
+        # Path-based lookup: relative paths normalized to forward slashes, lowercased
+        # e.g. "Projects/flatsnap/INDEX.md" and "projects/flatsnap/index.md"
+        self._all_paths_lower: set[str] = {
+            n.relative_path.replace("\\", "/").lower() for n in notes
+        }
+        # Paths without .md extension for bare path links like [[Projects/flatsnap/INDEX]]
+        self._paths_no_ext: set[str] = {
+            p[:-3] if p.endswith(".md") else p
+            for p in self._all_paths_lower
+        }
+
         # Union of all normalized targets that can be resolved
         self._all_targets: set[str] = self._titles | self._stems
 
@@ -40,9 +51,28 @@ class HealthChecker:
         result: list[dict] = []
         for note in self._notes:
             for link in note.links:
-                if _normalize(link) not in self._all_targets:
+                if not self._link_exists(link):
                     result.append({"source": note.relative_path, "target": link})
         return result
+
+    def _link_exists(self, link: str) -> bool:
+        """Return True if *link* resolves to a known note."""
+        # Strip trailing backslash and whitespace (handles [[path\]] artifacts)
+        cleaned = link.strip().rstrip("\\")
+        key = _normalize(cleaned)
+
+        # Title / stem match (existing behaviour)
+        if key in self._all_targets:
+            return True
+
+        # Path-based match: [[Projects/flatsnap/INDEX]] → Projects/flatsnap/INDEX.md
+        normalized = cleaned.replace("\\", "/").lower()
+        if normalized in self._paths_no_ext:
+            return True
+        if (normalized + ".md") in self._all_paths_lower:
+            return True
+
+        return False
 
     def orphan_notes(self) -> list[str]:
         """Return notes with no inbound *and* no outbound links.

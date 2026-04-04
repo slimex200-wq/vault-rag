@@ -141,3 +141,36 @@ def test_incremental_scan_detects_changes(tmp_vault: Path) -> None:
     second = scanner.scan(known_hashes=known_hashes)
     assert len(second) == 1
     assert "project-alpha.md" in second[0].relative_path
+
+
+# ---------------------------------------------------------------------------
+# 11. code blocks — wikilinks inside ``` should be ignored
+# ---------------------------------------------------------------------------
+
+def test_scan_ignores_wikilinks_in_code_blocks(cfg: VaultConfig, tmp_vault: Path) -> None:
+    """Code blocks with [[ should not produce wikilinks."""
+    (tmp_vault / "code-note.md").write_text(
+        "# Code\n\n```lua\nlocal t = [[\nmultiline\n]]\n```\n\nSee [[real-link]].\n",
+        encoding="utf-8",
+    )
+    scanner = VaultScanner(cfg)
+    notes = scanner.scan()
+    code_note = next(n for n in notes if "code-note" in str(n.path))
+    assert "real-link" in code_note.links
+    assert not any("\n" in link for link in code_note.links)  # No multiline "links"
+
+
+# ---------------------------------------------------------------------------
+# 12. trailing backslash — [[link\]] should be stripped to "link"
+# ---------------------------------------------------------------------------
+
+def test_scan_strips_backslash_from_wikilinks(cfg: VaultConfig, tmp_vault: Path) -> None:
+    """Trailing backslash in [[link\\]] should be stripped."""
+    (tmp_vault / "backslash-note.md").write_text(
+        "# BS\n\nSee [[some-target\\]].\n",
+        encoding="utf-8",
+    )
+    scanner = VaultScanner(cfg)
+    notes = scanner.scan()
+    bs_note = next(n for n in notes if "backslash" in str(n.path))
+    assert "some-target" in bs_note.links
