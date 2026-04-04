@@ -99,6 +99,11 @@ class QAEngine:
 
     def answer(self, question: str, n_context: int = 5) -> QAResult:
         """Full RAG pipeline: search -> format context -> LLM -> QAResult."""
+        if self._client is None:
+            raise RuntimeError(
+                "QAEngine.answer() requires a client. "
+                "This instance was created for search/dedup only."
+            )
         sources = self.search(question, n_results=n_context)
 
         if sources:

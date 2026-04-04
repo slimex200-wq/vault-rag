@@ -116,6 +116,14 @@ class VaultScanner:
             yt_match = _RE_YAML_TAGS.search(frontmatter)
             if yt_match:
                 fm_tags = [t.strip() for t in yt_match.group(1).split(",") if t.strip()]
+            else:
+                # Try YAML list format: tags:\n  - tag1\n  - tag2
+                yaml_list_blocks = re.findall(r"tags:\s*\n((?:\s+-\s+.+\n?)+)", frontmatter)
+                for block in yaml_list_blocks:
+                    for line in block.splitlines():
+                        tag = line.strip().lstrip("- ").strip("'\"").strip()
+                        if tag:
+                            fm_tags.append(tag)
 
         # --- inline tags from body ---
         inline_tags = _RE_INLINE_TAGS.findall(body)

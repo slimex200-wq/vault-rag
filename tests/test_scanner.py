@@ -174,3 +174,20 @@ def test_scan_strips_backslash_from_wikilinks(cfg: VaultConfig, tmp_vault: Path)
     notes = scanner.scan()
     bs_note = next(n for n in notes if "backslash" in str(n.path))
     assert "some-target" in bs_note.links
+
+
+# ---------------------------------------------------------------------------
+# 13. YAML list format tags
+# ---------------------------------------------------------------------------
+
+def test_scanned_note_extracts_tags_from_yaml_list(cfg: VaultConfig, tmp_vault: Path) -> None:
+    """Tags in YAML list format (tags:\\n  - tag) should be extracted."""
+    (tmp_vault / "yaml-tags.md").write_text(
+        "---\ntags:\n  - alpha\n  - beta\n---\n\n# YAML Tags\n\nContent.\n",
+        encoding="utf-8",
+    )
+    scanner = VaultScanner(cfg)
+    notes = scanner.scan()
+    note = next(n for n in notes if "yaml-tags" in str(n.path))
+    assert "alpha" in note.tags
+    assert "beta" in note.tags
