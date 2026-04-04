@@ -1,17 +1,16 @@
 """Tests for KnowledgeGraph — NetworkX wikilink graph."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from vault_rag.engine.graph import KnowledgeGraph
 from vault_rag.ingest.scanner import ScannedNote
-
 
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
 
 def _note(
     title: str,
@@ -34,6 +33,7 @@ def _note(
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_build_graph_from_notes() -> None:
     """A->B, B->A, B->C produces 3 nodes and 3 edges."""

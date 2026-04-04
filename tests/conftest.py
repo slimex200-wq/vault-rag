@@ -1,4 +1,5 @@
 """Shared pytest fixtures for vault-rag tests."""
+
 from pathlib import Path
 
 import pytest

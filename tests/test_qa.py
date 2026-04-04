@@ -1,15 +1,12 @@
 """Tests for the RAG Q&A engine."""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
 from unittest.mock import MagicMock
-
-import pytest
 
 from vault_rag.engine.qa import QAEngine, QAResult
 from vault_rag.store.vector_store import VectorStore
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -109,9 +106,7 @@ def test_answer_passes_context_to_llm(tmp_path: Path) -> None:
 
     call_kwargs = client.messages.create.call_args
     messages = call_kwargs[1]["messages"] if call_kwargs[1] else call_kwargs[0][2]
-    user_message_content = next(
-        m["content"] for m in messages if m["role"] == "user"
-    )
+    user_message_content = next(m["content"] for m in messages if m["role"] == "user")
 
     assert "Embeddings are dense vector representations." in user_message_content
 

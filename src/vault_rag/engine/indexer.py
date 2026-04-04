@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from vault_rag.config import VaultConfig
 from vault_rag.ingest.scanner import ScannedNote
@@ -47,10 +47,7 @@ class Indexer:
 
     def _batches(self, notes: list[ScannedNote]) -> list[list[ScannedNote]]:
         """notes를 batch_size 단위로 분할한다."""
-        return [
-            notes[i : i + self._batch_size]
-            for i in range(0, len(notes), self._batch_size)
-        ]
+        return [notes[i : i + self._batch_size] for i in range(0, len(notes), self._batch_size)]
 
     def _upsert_batch(self, batch: list[ScannedNote]) -> None:
         """단일 배치를 임베딩하고 VectorStore에 upsert한다."""

@@ -1,4 +1,5 @@
 """KnowledgeGraph: NetworkX-backed wikilink graph for an Obsidian vault."""
+
 from __future__ import annotations
 
 import json
@@ -90,9 +91,7 @@ class KnowledgeGraph:
         """Return connected components (undirected) with size > 1."""
         undirected = self._graph.to_undirected()
         return [
-            component
-            for component in nx.connected_components(undirected)
-            if len(component) > 1
+            component for component in nx.connected_components(undirected) if len(component) > 1
         ]
 
     # ------------------------------------------------------------------

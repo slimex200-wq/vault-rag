@@ -1,9 +1,10 @@
 """RAG Q&A Engine: retrieve-rank-generate pipeline."""
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from vault_rag.store.vector_store import VectorStore
 

@@ -1,4 +1,5 @@
 """HealthChecker: vault sanity checks for broken links, orphans, untagged, and empty notes."""
+
 from __future__ import annotations
 
 import re
@@ -31,8 +32,7 @@ class HealthChecker:
         }
         # Paths without .md extension for bare path links like [[Projects/flatsnap/INDEX]]
         self._paths_no_ext: set[str] = {
-            p[:-3] if p.endswith(".md") else p
-            for p in self._all_paths_lower
+            p[:-3] if p.endswith(".md") else p for p in self._all_paths_lower
         }
 
         # Union of all normalized targets that can be resolved

@@ -3,8 +3,6 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from vault_rag.config import VaultConfig
 from vault_rag.engine.indexer import Indexer
 from vault_rag.ingest.scanner import ScannedNote

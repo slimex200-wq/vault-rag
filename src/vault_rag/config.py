@@ -1,4 +1,5 @@
 """VaultConfig: central configuration dataclass for vault-rag."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

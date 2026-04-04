@@ -1,15 +1,14 @@
 """Tests for VaultScanner (Task 2: Data Ingest Layer)."""
+
 from pathlib import Path
 
-import pytest
-
 from vault_rag.config import VaultConfig
-from vault_rag.ingest.scanner import ScannedNote, VaultScanner
-
+from vault_rag.ingest.scanner import VaultScanner
 
 # ---------------------------------------------------------------------------
 # 1. scan finds expected .md files
 # ---------------------------------------------------------------------------
+
 
 def test_scan_finds_md_files(cfg: VaultConfig) -> None:
     scanner = VaultScanner(cfg)
@@ -24,6 +23,7 @@ def test_scan_finds_md_files(cfg: VaultConfig) -> None:
 # 2. excluded dirs — .obsidian
 # ---------------------------------------------------------------------------
 
+
 def test_scan_excludes_obsidian_dir(tmp_vault: Path, cfg: VaultConfig) -> None:
     (tmp_vault / ".obsidian" / "hidden.md").write_text(
         "# Hidden\n\nShould not appear.", encoding="utf-8"
@@ -37,10 +37,9 @@ def test_scan_excludes_obsidian_dir(tmp_vault: Path, cfg: VaultConfig) -> None:
 # 3. excluded dirs — _trash
 # ---------------------------------------------------------------------------
 
+
 def test_scan_excludes_trash(tmp_vault: Path, cfg: VaultConfig) -> None:
-    (tmp_vault / "_trash" / "deleted.md").write_text(
-        "# Deleted\n\nTrash note.", encoding="utf-8"
-    )
+    (tmp_vault / "_trash" / "deleted.md").write_text("# Deleted\n\nTrash note.", encoding="utf-8")
     scanner = VaultScanner(cfg)
     notes = scanner.scan()
     assert not any("_trash" in n.relative_path for n in notes)
@@ -49,6 +48,7 @@ def test_scan_excludes_trash(tmp_vault: Path, cfg: VaultConfig) -> None:
 # ---------------------------------------------------------------------------
 # 4. title extracted from first # heading
 # ---------------------------------------------------------------------------
+
 
 def test_scanned_note_extracts_title(cfg: VaultConfig) -> None:
     scanner = VaultScanner(cfg)
@@ -60,6 +60,7 @@ def test_scanned_note_extracts_title(cfg: VaultConfig) -> None:
 # ---------------------------------------------------------------------------
 # 5. YAML frontmatter tags
 # ---------------------------------------------------------------------------
+
 
 def test_scanned_note_extracts_tags_from_frontmatter(tmp_vault: Path) -> None:
     note_path = tmp_vault / "Projects" / "project-alpha.md"
@@ -79,6 +80,7 @@ def test_scanned_note_extracts_tags_from_frontmatter(tmp_vault: Path) -> None:
 # 6. inline #tags from body
 # ---------------------------------------------------------------------------
 
+
 def test_scanned_note_extracts_inline_tags(cfg: VaultConfig) -> None:
     scanner = VaultScanner(cfg)
     notes = scanner.scan()
@@ -92,6 +94,7 @@ def test_scanned_note_extracts_inline_tags(cfg: VaultConfig) -> None:
 # 7. wikilinks extracted
 # ---------------------------------------------------------------------------
 
+
 def test_scanned_note_extracts_wikilinks(cfg: VaultConfig) -> None:
     scanner = VaultScanner(cfg)
     notes = scanner.scan()
@@ -104,6 +107,7 @@ def test_scanned_note_extracts_wikilinks(cfg: VaultConfig) -> None:
 # 8. every note has a non-empty content hash
 # ---------------------------------------------------------------------------
 
+
 def test_scanned_note_has_content_hash(cfg: VaultConfig) -> None:
     scanner = VaultScanner(cfg)
     notes = scanner.scan()
@@ -113,6 +117,7 @@ def test_scanned_note_has_content_hash(cfg: VaultConfig) -> None:
 # ---------------------------------------------------------------------------
 # 9. incremental scan — all unchanged → 0 results
 # ---------------------------------------------------------------------------
+
 
 def test_incremental_scan_skips_unchanged(cfg: VaultConfig) -> None:
     scanner = VaultScanner(cfg)
@@ -126,6 +131,7 @@ def test_incremental_scan_skips_unchanged(cfg: VaultConfig) -> None:
 # 10. incremental scan — modified file detected
 # ---------------------------------------------------------------------------
 
+
 def test_incremental_scan_detects_changes(tmp_vault: Path) -> None:
     cfg = VaultConfig(vault_path=tmp_vault)
     scanner = VaultScanner(cfg)
@@ -134,9 +140,7 @@ def test_incremental_scan_detects_changes(tmp_vault: Path) -> None:
 
     # Modify one file
     note_path = tmp_vault / "Projects" / "project-alpha.md"
-    note_path.write_text(
-        "# Project Alpha\n\nUpdated content.", encoding="utf-8"
-    )
+    note_path.write_text("# Project Alpha\n\nUpdated content.", encoding="utf-8")
 
     second = scanner.scan(known_hashes=known_hashes)
     assert len(second) == 1
@@ -146,6 +150,7 @@ def test_incremental_scan_detects_changes(tmp_vault: Path) -> None:
 # ---------------------------------------------------------------------------
 # 11. code blocks — wikilinks inside ``` should be ignored
 # ---------------------------------------------------------------------------
+
 
 def test_scan_ignores_wikilinks_in_code_blocks(cfg: VaultConfig, tmp_vault: Path) -> None:
     """Code blocks with [[ should not produce wikilinks."""
@@ -164,6 +169,7 @@ def test_scan_ignores_wikilinks_in_code_blocks(cfg: VaultConfig, tmp_vault: Path
 # 12. trailing backslash — [[link\]] should be stripped to "link"
 # ---------------------------------------------------------------------------
 
+
 def test_scan_strips_backslash_from_wikilinks(cfg: VaultConfig, tmp_vault: Path) -> None:
     """Trailing backslash in [[link\\]] should be stripped."""
     (tmp_vault / "backslash-note.md").write_text(
@@ -179,6 +185,7 @@ def test_scan_strips_backslash_from_wikilinks(cfg: VaultConfig, tmp_vault: Path)
 # ---------------------------------------------------------------------------
 # 13. YAML list format tags
 # ---------------------------------------------------------------------------
+
 
 def test_scanned_note_extracts_tags_from_yaml_list(cfg: VaultConfig, tmp_vault: Path) -> None:
     """Tags in YAML list format (tags:\\n  - tag) should be extracted."""

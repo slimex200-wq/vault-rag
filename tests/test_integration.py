@@ -1,4 +1,5 @@
 """Integration tests: E2E pipeline scan → index → search → graph → health."""
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,6 @@ from vault_rag.engine.indexer import Indexer
 from vault_rag.engine.qa import QAEngine
 from vault_rag.ingest.scanner import VaultScanner
 from vault_rag.store.vector_store import VectorStore
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -103,9 +103,11 @@ def test_cli_index_and_search(tmp_vault: Path, cfg: VaultConfig, tmp_path: Path)
 
     real_store = VectorStore(tmp_path / "chroma_cli")
 
-    with patch("vault_rag.cli._get_config", return_value=cfg), patch(
-        "vault_rag.engine.indexer.create_openai_embed_fn", return_value=embed_mock
-    ), patch("vault_rag.store.vector_store.VectorStore", return_value=real_store):
+    with (
+        patch("vault_rag.cli._get_config", return_value=cfg),
+        patch("vault_rag.engine.indexer.create_openai_embed_fn", return_value=embed_mock),
+        patch("vault_rag.store.vector_store.VectorStore", return_value=real_store),
+    ):
         idx_result = runner.invoke(cli, ["index"])
         assert idx_result.exit_code == 0, idx_result.output
         assert "Indexed" in idx_result.output
@@ -135,8 +137,9 @@ def test_cli_compile_command(tmp_vault: Path, cfg: VaultConfig) -> None:
 
     note_path = tmp_vault / "index.md"
 
-    with patch("vault_rag.cli._get_config", return_value=cfg), patch(
-        "anthropic.Anthropic", return_value=mock_client
+    with (
+        patch("vault_rag.cli._get_config", return_value=cfg),
+        patch("anthropic.Anthropic", return_value=mock_client),
     ):
         result = runner.invoke(cli, ["compile", str(note_path)])
 
@@ -145,9 +148,7 @@ def test_cli_compile_command(tmp_vault: Path, cfg: VaultConfig) -> None:
 
 
 @pytest.mark.integration
-def test_compile_and_index_pipeline(
-    tmp_vault: Path, cfg: VaultConfig, tmp_path: Path
-) -> None:
+def test_compile_and_index_pipeline(tmp_vault: Path, cfg: VaultConfig, tmp_path: Path) -> None:
     """E2E: scan → compile (mocked LLM) → index."""
     # 1. Scan
     scanner = VaultScanner(cfg)

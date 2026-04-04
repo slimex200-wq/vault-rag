@@ -1,4 +1,5 @@
 """NoteStore: filesystem CRUD for Obsidian markdown notes."""
+
 from __future__ import annotations
 
 import re
@@ -74,7 +75,7 @@ class NoteStore:
         frontmatter = fm_match.group(0) if fm_match else ""
 
         # Extract heading from the original text (after frontmatter)
-        after_fm = original[len(frontmatter):]
+        after_fm = original[len(frontmatter) :]
         h1_match = _HEADING_RE.match(after_fm)
         heading = h1_match.group(0) if h1_match else ""
 

@@ -1,4 +1,5 @@
 """Tests for WebClipper (trafilatura-based web-to-markdown)."""
+
 from __future__ import annotations
 
 from pathlib import Path

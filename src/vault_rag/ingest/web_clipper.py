@@ -1,4 +1,5 @@
 """WebClipper: fetch a URL and save as an Obsidian-style markdown note."""
+
 from __future__ import annotations
 
 import re
@@ -6,7 +7,6 @@ from datetime import date
 from pathlib import Path
 
 import trafilatura
-
 
 # Characters forbidden in Windows/POSIX filenames
 _INVALID_CHARS_RE = re.compile(r'[<>:"/\\|?*]')
@@ -52,10 +52,8 @@ class WebClipper:
         text: str = trafilatura.extract(html) or ""
         meta = trafilatura.extract_metadata(html)
 
-        title: str = (meta.title if meta and meta.title else url)
-        clipped_date: str = (
-            meta.date if meta and meta.date else date.today().isoformat()
-        )
+        title: str = meta.title if meta and meta.title else url
+        clipped_date: str = meta.date if meta and meta.date else date.today().isoformat()
 
         filename = self._sanitize(title) + ".md"
         target_dir = self.vault_path / folder
@@ -83,11 +81,6 @@ class WebClipper:
     def _render(title: str, url: str, clipped_date: str, body: str) -> str:
         """Return the full markdown note string with YAML frontmatter."""
         frontmatter = (
-            "---\n"
-            f"title: {title}\n"
-            f"source: {url}\n"
-            f"clipped: {clipped_date}\n"
-            "tags: [clipped]\n"
-            "---\n"
+            f"---\ntitle: {title}\nsource: {url}\nclipped: {clipped_date}\ntags: [clipped]\n---\n"
         )
         return frontmatter + f"\n# {title}\n\n{body}\n"

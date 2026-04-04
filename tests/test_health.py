@@ -1,17 +1,16 @@
 """Tests for HealthChecker (Task 8: Health Checks)."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from vault_rag.engine.health import HealthChecker
 from vault_rag.ingest.scanner import ScannedNote
-
 
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
 
 def _note(
     title: str,
@@ -36,6 +35,7 @@ def _note(
 # 1. test_detect_broken_links
 # ---------------------------------------------------------------------------
 
+
 def test_detect_broken_links() -> None:
     a = _note("A", "a.md", links=["NonExistent"])
     b = _note("B", "b.md")
@@ -49,6 +49,7 @@ def test_detect_broken_links() -> None:
 # ---------------------------------------------------------------------------
 # 2. test_detect_orphan_notes
 # ---------------------------------------------------------------------------
+
 
 def test_detect_orphan_notes() -> None:
     a = _note("A", "a.md", links=["B"])
@@ -65,6 +66,7 @@ def test_detect_orphan_notes() -> None:
 # 3. test_detect_untagged_notes
 # ---------------------------------------------------------------------------
 
+
 def test_detect_untagged_notes() -> None:
     tagged = _note("Tagged", "tagged.md", tags=["ai"])
     untagged = _note("Untagged", "untagged.md", tags=[])
@@ -77,6 +79,7 @@ def test_detect_untagged_notes() -> None:
 # ---------------------------------------------------------------------------
 # 4. test_detect_empty_notes
 # ---------------------------------------------------------------------------
+
 
 def test_detect_empty_notes() -> None:
     normal = _note("Normal", "normal.md", content="Has content")
@@ -92,6 +95,7 @@ def test_detect_empty_notes() -> None:
 # ---------------------------------------------------------------------------
 # 5. test_full_report
 # ---------------------------------------------------------------------------
+
 
 def test_full_report() -> None:
     a = _note("A", "a.md", links=["B", "Missing"])
@@ -120,6 +124,7 @@ def test_full_report() -> None:
 # 6. path-based wikilinks should not be broken
 # ---------------------------------------------------------------------------
 
+
 def test_path_based_links_not_broken() -> None:
     """[[Projects/flatsnap/INDEX]] should resolve to Projects/flatsnap/INDEX.md"""
     notes = [
@@ -134,6 +139,7 @@ def test_path_based_links_not_broken() -> None:
 # ---------------------------------------------------------------------------
 # 7. backslash-suffixed path links should not be broken
 # ---------------------------------------------------------------------------
+
 
 def test_backslash_links_not_broken() -> None:
     """[[Projects/flatsnap/INDEX\\]] should still resolve."""

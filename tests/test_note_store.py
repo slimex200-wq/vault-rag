@@ -1,4 +1,5 @@
 """Tests for NoteStore CRUD operations."""
+
 from pathlib import Path
 
 import pytest

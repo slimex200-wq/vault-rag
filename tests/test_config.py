@@ -1,7 +1,4 @@
 """Tests for VaultConfig dataclass."""
-from pathlib import Path
-
-import pytest
 
 from vault_rag.config import VaultConfig
 

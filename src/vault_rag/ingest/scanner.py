@@ -1,4 +1,5 @@
 """VaultScanner: traverse an Obsidian vault and parse markdown notes."""
+
 from __future__ import annotations
 
 import hashlib
@@ -24,6 +25,7 @@ _RE_CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
 # Data model
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ScannedNote:
     """Parsed representation of a single Obsidian markdown note."""
@@ -31,16 +33,17 @@ class ScannedNote:
     path: Path
     relative_path: str
     title: str
-    content: str          # body without frontmatter
-    tags: list[str]       # deduplicated, order-preserving
-    links: list[str]      # wikilink targets
-    modified: float       # mtime
-    content_hash: str     # md5 hex digest of raw file content
+    content: str  # body without frontmatter
+    tags: list[str]  # deduplicated, order-preserving
+    links: list[str]  # wikilink targets
+    modified: float  # mtime
+    content_hash: str  # md5 hex digest of raw file content
 
 
 # ---------------------------------------------------------------------------
 # Scanner
 # ---------------------------------------------------------------------------
+
 
 class VaultScanner:
     """Scans an Obsidian vault directory and parses .md files into ScannedNote objects."""
@@ -52,9 +55,7 @@ class VaultScanner:
     # Public API
     # ------------------------------------------------------------------
 
-    def scan(
-        self, known_hashes: dict[str, str] | None = None
-    ) -> list[ScannedNote]:
+    def scan(self, known_hashes: dict[str, str] | None = None) -> list[ScannedNote]:
         """Return ScannedNote list for all non-excluded .md files.
 
         When *known_hashes* is provided (relative_path → md5), only files
@@ -108,7 +109,7 @@ class VaultScanner:
         # --- frontmatter ---
         fm_match = _RE_FRONTMATTER.match(content)
         frontmatter = fm_match.group(1) if fm_match else ""
-        body = content[fm_match.end():] if fm_match else content
+        body = content[fm_match.end() :] if fm_match else content
 
         # --- tags from YAML frontmatter ---
         fm_tags: list[str] = []

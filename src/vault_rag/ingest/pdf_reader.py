@@ -1,4 +1,5 @@
 """PDFReader: extract text from PDF files and save as markdown notes."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -95,11 +96,6 @@ class PDFReader:
     def _render(title: str, source: str, result: PDFResult) -> str:
         """Return the full markdown note string with YAML frontmatter."""
         frontmatter = (
-            "---\n"
-            f"title: {title}\n"
-            f"source: {source}\n"
-            f"pages: {result.page_count}\n"
-            "tags: [pdf]\n"
-            "---\n"
+            f"---\ntitle: {title}\nsource: {source}\npages: {result.page_count}\ntags: [pdf]\n---\n"
         )
         return frontmatter + f"\n# {title}\n\n{result.text}\n"
