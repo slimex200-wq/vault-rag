@@ -19,10 +19,12 @@ _COMPILE_PROMPT = (
     "You are a knowledge management assistant. Analyze this note and return JSON:\n"
     '{{"summary": "2-3 sentence summary in the note\'s language", '
     '"tags": ["lowercase", "relevant", "tags"], '
-    '"suggested_links": ["titles of related concepts"]}}\n'
+    '"suggested_links": ["EXACT titles from the existing notes list below"]}}\n\n'
+    "IMPORTANT: suggested_links must ONLY contain titles from this list of existing notes:\n"
+    "{known_titles_list}\n\n"
     "Note title: {title}\n"
     "Note tags: {tags}\n"
-    "Note content: {content}\n"
+    "Note content: {content}\n\n"
     "Return ONLY valid JSON, no markdown fences."
 )
 
@@ -55,12 +57,16 @@ class Compiler:
     # Public API
     # ------------------------------------------------------------------
 
-    def compile(self, note: ScannedNote) -> CompileResult:
+    def compile(
+        self, note: ScannedNote, known_titles: set[str] | None = None
+    ) -> CompileResult:
         """Send *note* to the LLM and return summary/tags/suggested_links."""
+        titles_list = ", ".join(sorted(known_titles)[:100]) if known_titles else "(no list available)"
         prompt = _COMPILE_PROMPT.format(
             title=note.title,
             tags=", ".join(note.tags),
-            content=note.content,
+            content=note.content[:3000],
+            known_titles_list=titles_list,
         )
         message = self._client.messages.create(
             model=self.model,
@@ -79,7 +85,7 @@ class Compiler:
         known_titles: set[str] | None = None,
     ) -> CompileResult:
         """Compile note and write results back to the file."""
-        result = self.compile(note)
+        result = self.compile(note, known_titles=known_titles)
         if not result.summary and not result.tags and not result.suggested_links:
             return result
 
