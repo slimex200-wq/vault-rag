@@ -33,6 +33,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--tb=short"
+markers = [
+    "integration: end-to-end pipeline tests",
+]
 
 [tool.ruff]
 line-length = 100

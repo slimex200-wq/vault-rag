@@ -157,10 +157,8 @@ def index_cmd(full: bool) -> None:
 
     if full:
         click.echo("Full reindex: clearing existing index...")
-        notes = scanner.scan()
-    else:
-        existing_ids = store.get(ids=[])  # not useful here; incremental via scanner
-        notes = scanner.scan()
+
+    notes = scanner.scan()
 
     embed_fn = create_openai_embed_fn(
         model=config.embedding_model,
