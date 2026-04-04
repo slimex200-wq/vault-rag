@@ -39,6 +39,7 @@ def _auto_compile_and_index(note_path: "Path", config: "VaultConfig") -> None:
 
     from vault_rag.engine.compiler import Compiler
     from vault_rag.engine.indexer import Indexer, create_openai_embed_fn
+    from vault_rag.engine.qa import QAEngine
     from vault_rag.ingest.scanner import VaultScanner
     from vault_rag.store.vector_store import VectorStore
 
@@ -53,17 +54,29 @@ def _auto_compile_and_index(note_path: "Path", config: "VaultConfig") -> None:
         click.echo("  Warning: note not found in vault scan — skipping compile.", err=True)
         return
 
+    # Dedup check before compiling
+    vs = VectorStore(persist_dir=config.chroma_path)
+    embed_fn = create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
+    if vs.count() > 0:
+        qa = QAEngine(vector_store=vs, embed_fn=embed_fn, client=None, model="")
+        note_content_text = target.title + " " + target.content
+        dupes = qa.find_duplicates(note_content_text, threshold=0.3)
+        if dupes:
+            click.echo(f"  Warning: Similar notes found ({len(dupes)}):")
+            for d in dupes:
+                click.echo(f"    [{d['distance']:.3f}] {d['metadata'].get('title', d['id'])}")
+
+    known = {n.title.lower() for n in notes} | {Path(n.relative_path).stem.lower() for n in notes}
     client = Anthropic()
     compiler = Compiler(client=client, model=config.compile_model)
-    result = compiler.compile(target)
+    result = compiler.compile_and_write(target, known_titles=known)
     click.echo(f"  Summary: {result.summary}")
     if result.tags:
         click.echo(f"  Tags: {', '.join(result.tags)}")
     if result.suggested_links:
         click.echo(f"  Links: {', '.join(result.suggested_links)}")
+    click.echo("  Written to note.")
 
-    vs = VectorStore(persist_dir=config.chroma_path)
-    embed_fn = create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
     indexer = Indexer(config=config, vector_store=vs, embed_fn=embed_fn)
     indexer.index([target])
     click.echo("  Indexed.")
@@ -317,7 +330,8 @@ def ingest_pdf_cmd(pdf_path: Path, folder: str, no_compile: bool) -> None:
 
 @cli.command("compile")
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
-def compile_cmd(path: Path) -> None:
+@click.option("--dry-run", is_flag=True, default=False, help="Show results without writing to file")
+def compile_cmd(path: Path, dry_run: bool) -> None:
     """Compile a single note: auto-summarize, tag, and suggest links."""
     from anthropic import Anthropic
 
@@ -327,7 +341,6 @@ def compile_cmd(path: Path) -> None:
     config = _get_config()
     scanner = VaultScanner(config)
 
-    # Scan all notes then find the matching one
     notes = scanner.scan()
     target_path = Path(path).resolve()
     note = next(
@@ -341,7 +354,13 @@ def compile_cmd(path: Path) -> None:
 
     client = Anthropic()
     compiler = Compiler(client=client, model=config.compile_model)
-    result = compiler.compile(note)
+
+    if dry_run:
+        result = compiler.compile(note)
+    else:
+        known = {n.title.lower() for n in notes} | {Path(n.relative_path).stem.lower() for n in notes}
+        result = compiler.compile_and_write(note, known_titles=known)
+        click.echo("  Written to note.")
 
     click.echo(f"Summary:\n{result.summary}\n")
     if result.tags:
@@ -378,9 +397,10 @@ def compile_new_cmd(dry_run: bool) -> None:
 
     client = Anthropic()
     compiler = Compiler(client=client, model=config.compile_model)
+    known = {n.title.lower() for n in notes} | {Path(n.relative_path).stem.lower() for n in notes}
 
     for i, note in enumerate(untagged):
-        result = compiler.compile(note)
+        result = compiler.compile_and_write(note, known_titles=known)
         click.echo(f"  [{i + 1}/{len(untagged)}] {note.relative_path}")
         if result.tags:
             click.echo(f"    Tags: {', '.join(result.tags)}")

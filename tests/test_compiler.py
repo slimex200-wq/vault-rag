@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -114,3 +115,88 @@ def test_compile_batch() -> None:
 
     assert len(results) == 3
     assert client.messages.create.call_count == 3
+
+
+def test_compile_and_write_updates_frontmatter(tmp_path: Path) -> None:
+    """compile_and_write should update the note file with summary and tags."""
+    note_path = tmp_path / "test.md"
+    note_path.write_text("---\ntags: [existing]\n---\n\n# Test\n\nContent here.\n", encoding="utf-8")
+
+    response_json = '{"summary": "Test summary", "tags": ["ai", "new"], "suggested_links": ["Other Note"]}'
+    client = _mock_anthropic_response(response_json)
+    compiler = Compiler(client=client, model="test")
+
+    note = ScannedNote(
+        path=note_path, relative_path="test.md", title="Test",
+        content="Content here.", tags=["existing"], links=[],
+        modified=time.time(), content_hash="x",
+    )
+    result = compiler.compile_and_write(note)
+
+    updated = note_path.read_text(encoding="utf-8")
+    assert "Test summary" in updated
+    assert "ai" in updated
+    assert "existing" in updated  # preserved
+    assert "## Related" in updated
+    assert "[[Other Note]]" in updated
+
+
+def test_compile_and_write_no_duplicate_related(tmp_path: Path) -> None:
+    """Should not add ## Related twice."""
+    note_path = tmp_path / "test.md"
+    note_path.write_text("# Test\n\nContent.\n\n## Related\n\n- [[Existing]]\n", encoding="utf-8")
+
+    response_json = '{"summary": "s", "tags": [], "suggested_links": ["New Link"]}'
+    client = _mock_anthropic_response(response_json)
+    compiler = Compiler(client=client, model="test")
+
+    note = ScannedNote(
+        path=note_path, relative_path="test.md", title="Test",
+        content="Content.", tags=[], links=[], modified=time.time(), content_hash="x",
+    )
+    compiler.compile_and_write(note)
+
+    updated = note_path.read_text(encoding="utf-8")
+    assert updated.count("## Related") == 1  # Not duplicated
+
+
+def test_compile_and_write_filters_unknown_links(tmp_path: Path) -> None:
+    """Only inject links that match known titles."""
+    note_path = tmp_path / "test.md"
+    note_path.write_text("# Test\n\nContent.\n", encoding="utf-8")
+
+    response_json = '{"summary": "s", "tags": [], "suggested_links": ["Known Note", "Unknown Note"]}'
+    client = _mock_anthropic_response(response_json)
+    compiler = Compiler(client=client, model="test")
+
+    note = ScannedNote(
+        path=note_path, relative_path="test.md", title="Test",
+        content="Content.", tags=[], links=[], modified=time.time(), content_hash="x",
+    )
+    known = {"known note", "other"}
+    compiler.compile_and_write(note, known_titles=known)
+
+    updated = note_path.read_text(encoding="utf-8")
+    assert "[[Known Note]]" in updated
+    assert "[[Unknown Note]]" not in updated
+
+
+def test_compile_and_write_creates_frontmatter_when_missing(tmp_path: Path) -> None:
+    """Creates frontmatter if the note has none."""
+    note_path = tmp_path / "no_fm.md"
+    note_path.write_text("# No Frontmatter\n\nJust content.\n", encoding="utf-8")
+
+    response_json = '{"summary": "Created FM", "tags": ["auto"], "suggested_links": []}'
+    client = _mock_anthropic_response(response_json)
+    compiler = Compiler(client=client, model="test")
+
+    note = ScannedNote(
+        path=note_path, relative_path="no_fm.md", title="No Frontmatter",
+        content="Just content.", tags=[], links=[], modified=time.time(), content_hash="y",
+    )
+    compiler.compile_and_write(note)
+
+    updated = note_path.read_text(encoding="utf-8")
+    assert updated.startswith("---")
+    assert "Created FM" in updated
+    assert "auto" in updated

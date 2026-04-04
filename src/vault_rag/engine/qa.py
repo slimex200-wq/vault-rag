@@ -87,6 +87,16 @@ class QAEngine:
             for i in range(len(ids))
         ]
 
+    def find_duplicates(self, text: str, threshold: float = 0.3) -> list[dict]:
+        """Find notes semantically similar to text.
+
+        Returns notes with distance strictly less than *threshold*.
+        """
+        if self._store.count() == 0:
+            return []
+        results = self.search(text, n_results=5)
+        return [r for r in results if r.get("distance") is not None and r["distance"] < threshold]
+
     def answer(self, question: str, n_context: int = 5) -> QAResult:
         """Full RAG pipeline: search -> format context -> LLM -> QAResult."""
         sources = self.search(question, n_results=n_context)

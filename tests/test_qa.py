@@ -142,3 +142,59 @@ def test_search_only_returns_ranked_results(tmp_path: Path) -> None:
         assert "document" in item
         assert "metadata" in item
         assert "distance" in item
+
+
+def test_find_duplicates(tmp_path: Path) -> None:
+    """find_duplicates returns notes with distance below threshold."""
+    store = VectorStore(persist_dir=tmp_path / "chroma")
+    store.upsert(
+        ids=["note1.md"],
+        documents=["AI agents are autonomous programs"],
+        metadatas=[{"title": "AI Agents", "tags": "ai", "relative_path": "note1.md"}],
+        embeddings=[[0.1] * 512],
+    )
+
+    engine = QAEngine(
+        vector_store=store,
+        embed_fn=_mock_embed,
+        client=MagicMock(),
+        model="test",
+    )
+    dupes = engine.find_duplicates("AI agents autonomous", threshold=0.5)
+    assert len(dupes) >= 1
+
+
+def test_find_duplicates_empty_store(tmp_path: Path) -> None:
+    """find_duplicates returns empty list when store is empty."""
+    store = VectorStore(persist_dir=tmp_path / "chroma")
+
+    engine = QAEngine(
+        vector_store=store,
+        embed_fn=_mock_embed,
+        client=MagicMock(),
+        model="test",
+    )
+    dupes = engine.find_duplicates("anything", threshold=0.3)
+    assert len(dupes) == 0
+
+
+def test_find_duplicates_respects_threshold(tmp_path: Path) -> None:
+    """find_duplicates excludes results at or above threshold."""
+    store = VectorStore(persist_dir=tmp_path / "chroma")
+    store.upsert(
+        ids=["note1.md"],
+        documents=["Something completely unrelated"],
+        metadatas=[{"title": "Unrelated", "tags": "", "relative_path": "note1.md"}],
+        embeddings=[[0.1] * 512],
+    )
+
+    # mock_embed returns identical vectors → distance will be ~0 (very similar)
+    engine = QAEngine(
+        vector_store=store,
+        embed_fn=_mock_embed,
+        client=MagicMock(),
+        model="test",
+    )
+    # threshold of 0 means nothing qualifies (distance >= 0)
+    dupes = engine.find_duplicates("anything", threshold=0.0)
+    assert len(dupes) == 0
