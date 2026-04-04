@@ -68,7 +68,10 @@ class VaultScanner:
                 continue
 
             relative = md_file.relative_to(vault).as_posix()
-            raw = md_file.read_text(encoding="utf-8")
+            try:
+                raw = md_file.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                raw = md_file.read_text(encoding="utf-8", errors="replace")
             content_hash = hashlib.md5(raw.encode("utf-8")).hexdigest()
 
             if known_hashes is not None:

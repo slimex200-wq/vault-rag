@@ -109,17 +109,33 @@ class Compiler:
                     fm += f'\nsummary: "{result.summary}"'
 
             if result.tags:
-                existing_tag_match = re.search(r"tags:\s*\[([^\]]*)\]", fm)
-                if existing_tag_match:
+                # Handle both inline [a, b] and YAML list format
+                existing: list[str] = []
+                inline_match = re.search(r"tags:\s*\[([^\]]*)\]", fm)
+                yaml_list_match = re.search(r"tags:\s*\n((?:\s+-\s+.+\n?)+)", fm)
+
+                if inline_match:
                     existing = [
                         t.strip().strip("'\"")
-                        for t in existing_tag_match.group(1).split(",")
+                        for t in inline_match.group(1).split(",")
                         if t.strip()
                     ]
                     merged = list(dict.fromkeys(existing + result.tags))
                     fm = re.sub(
                         r"tags:\s*\[([^\]]*)\]",
                         f"tags: [{', '.join(merged)}]",
+                        fm,
+                    )
+                elif yaml_list_match:
+                    existing = [
+                        line.strip().lstrip("- ").strip("'\"")
+                        for line in yaml_list_match.group(1).splitlines()
+                        if line.strip()
+                    ]
+                    merged = list(dict.fromkeys(existing + result.tags))
+                    fm = re.sub(
+                        r"tags:\s*\n(?:\s+-\s+.+\n?)+",
+                        f"tags: [{', '.join(merged)}]\n",
                         fm,
                     )
                 else:
