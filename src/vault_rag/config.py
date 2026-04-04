@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-@dataclass
+@dataclass(frozen=True)
 class VaultConfig:
     """Configuration for the vault-rag pipeline."""
 
@@ -35,7 +35,7 @@ class VaultConfig:
     )
 
     def __post_init__(self) -> None:
-        self.vault_path = Path(self.vault_path)
+        object.__setattr__(self, "vault_path", Path(self.vault_path))
 
     @property
     def chroma_path(self) -> Path:
