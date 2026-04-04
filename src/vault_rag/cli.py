@@ -1,4 +1,5 @@
 """vault-rag CLI — Click entry point for all pipeline commands."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,7 +7,6 @@ from pathlib import Path
 import click
 
 from vault_rag.config import VaultConfig
-
 
 # ---------------------------------------------------------------------------
 # Module-level helper (patchable in tests)
@@ -33,7 +33,7 @@ def cli() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _auto_compile_and_index(note_path: "Path", config: "VaultConfig") -> None:
+def _auto_compile_and_index(note_path: Path, config: VaultConfig) -> None:
     """Compile and embed a single note. Prints results to stdout."""
     from anthropic import Anthropic
 
@@ -358,7 +358,9 @@ def compile_cmd(path: Path, dry_run: bool) -> None:
     if dry_run:
         result = compiler.compile(note)
     else:
-        known = {n.title.lower() for n in notes} | {Path(n.relative_path).stem.lower() for n in notes}
+        known = {n.title.lower() for n in notes} | {
+            Path(n.relative_path).stem.lower() for n in notes
+        }
         result = compiler.compile_and_write(note, known_titles=known)
         click.echo("  Written to note.")
 
@@ -375,7 +377,9 @@ def compile_cmd(path: Path, dry_run: bool) -> None:
 
 
 @cli.command("compile-new")
-@click.option("--dry-run", is_flag=True, default=False, help="Show what would be compiled without doing it")
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Show what would be compiled without doing it"
+)
 def compile_new_cmd(dry_run: bool) -> None:
     """Auto-compile all untagged notes."""
     from vault_rag.ingest.scanner import VaultScanner
@@ -400,7 +404,67 @@ def compile_new_cmd(dry_run: bool) -> None:
     known = {n.title.lower() for n in notes} | {Path(n.relative_path).stem.lower() for n in notes}
 
     for i, note in enumerate(untagged):
-        result = compiler.compile_and_write(note, known_titles=known)
+        result, atoms_created = compiler.compile_and_extract(
+            note, known_titles=known, vault_path=config.vault_path
+        )
         click.echo(f"  [{i + 1}/{len(untagged)}] {note.relative_path}")
         if result.tags:
             click.echo(f"    Tags: {', '.join(result.tags)}")
+        if result.quality_score:
+            click.echo(f"    Quality: {result.quality_score} ({result.quality_tier})")
+        if atoms_created:
+            click.echo(f"    Atoms created: {len(atoms_created)}")
+
+
+# ---------------------------------------------------------------------------
+# audit
+# ---------------------------------------------------------------------------
+
+
+@cli.command("audit")
+def audit_cmd() -> None:
+    """Show notes by quality tier."""
+    import re
+
+    from vault_rag.ingest.scanner import VaultScanner
+
+    cfg = _get_config()
+    scanner = VaultScanner(cfg)
+    notes = scanner.scan()
+
+    high: list[str] = []
+    medium: list[str] = []
+    low: list[str] = []
+    unscored: list[str] = []
+
+    _score_re = re.compile(r"^quality_score:\s*(\d+)", re.MULTILINE)
+
+    for note in notes:
+        try:
+            raw = note.path.read_text(encoding="utf-8")
+        except OSError:
+            unscored.append(note.relative_path)
+            continue
+
+        match = _score_re.search(raw)
+        if not match:
+            unscored.append(note.relative_path)
+            continue
+
+        score = int(match.group(1))
+        if score >= 80:
+            high.append(note.relative_path)
+        elif score >= 40:
+            medium.append(note.relative_path)
+        else:
+            low.append(note.relative_path)
+
+    click.echo(f"HIGH   (80-100): {len(high)}")
+    click.echo(f"MEDIUM (40-79):  {len(medium)}")
+    click.echo(f"LOW    (0-39):   {len(low)}")
+    click.echo(f"Unscored:        {len(unscored)}")
+
+    if low:
+        click.echo("\nLOW quality (deletion candidates):")
+        for n in low[:10]:
+            click.echo(f"  {n}")
