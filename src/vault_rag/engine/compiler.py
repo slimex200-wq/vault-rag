@@ -25,7 +25,9 @@ _COMPILE_PROMPT = (
     '"quality_score": 0-100 integer rating the knowledge value (novelty, actionability, cross-reference potential), '
     '"atoms": [{{"title": "atomic concept title", "content": "2-3 sentence explanation", "tags": ["tag1"]}}] '
     "— extract if the note contains 2+ distinct concepts that could be separate notes. "
-    "Empty array if the note is already atomic."
+    "Empty array if the note is already atomic. "
+    '"further_questions": ["question 1", "question 2", "question 3"] '
+    "— 3 follow-up research questions based on the note's content, in the note's language."
     "}}\n\n"
     "IMPORTANT: suggested_links must ONLY contain titles from this list of existing notes:\n"
     "{known_titles_list}\n\n"
@@ -60,6 +62,7 @@ class CompileResult:
     quality_score: int = 0
     quality_tier: str = ""  # HIGH, MEDIUM, LOW
     atoms: list[dict] = field(default_factory=list)
+    further_questions: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +94,7 @@ class Compiler:
         )
         message = self._client.messages.create(
             model=self.model,
-            max_tokens=500,
+            max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )
         return self._parse_response(message.content[0].text)
@@ -110,10 +113,12 @@ class Compiler:
         if not result.summary and not result.tags and not result.suggested_links:
             return result
 
-        content = note.path.read_text(encoding="utf-8")
+        raw = note.path.read_bytes()
+        content = raw.decode("utf-8")
         content = self._update_frontmatter(content, result)
         content = self._add_related_links(content, result.suggested_links, known_titles)
-        note.path.write_text(content, encoding="utf-8")
+        content = self._add_further_questions(content, result.further_questions)
+        note.path.write_bytes(content.encode("utf-8"))
         return result
 
     def compile_and_extract(
@@ -258,10 +263,24 @@ class Compiler:
         links_md = "\n".join(f"- [[{lnk}]]" for lnk in valid_links)
         return content.rstrip() + f"\n\n## Related\n\n{links_md}\n"
 
+    def _add_further_questions(self, content: str, questions: list[str]) -> str:
+        """Append ## Further Questions section if not already present."""
+        if not questions:
+            return content
+        if "## Further Questions" in content:
+            return content
+
+        lines = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, 1))
+        return content.rstrip() + f"\n\n## Further Questions\n\n{lines}\n"
+
     def _parse_response(self, text: str) -> CompileResult:
         """Parse JSON response; return empty CompileResult on any failure."""
         try:
-            data = json.loads(text)
+            cleaned = (text or "").strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```(?:json)?\s*\n?", "", cleaned)
+                cleaned = re.sub(r"\n?```\s*$", "", cleaned)
+            data = json.loads(cleaned)
             score = int(data.get("quality_score", 0))
             score = max(0, min(100, score))
             return CompileResult(
@@ -271,6 +290,7 @@ class Compiler:
                 quality_score=score,
                 quality_tier=_compute_tier(score) if score else "",
                 atoms=data.get("atoms", []),
+                further_questions=data.get("further_questions", []),
             )
         except (json.JSONDecodeError, AttributeError, TypeError) as exc:
             logger.warning("Failed to parse LLM response: %s", exc)

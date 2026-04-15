@@ -50,6 +50,7 @@ class VectorStore:
         query_embeddings: list[list[float]],
         n_results: int = 10,
         where: dict[str, Any] | None = None,
+        where_document: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """벡터 유사도 검색. n_results가 실제 count를 초과하면 자동 조정."""
         actual_count = self.count()
@@ -61,6 +62,8 @@ class VectorStore:
         }
         if where is not None:
             kwargs["where"] = where
+        if where_document is not None:
+            kwargs["where_document"] = where_document
 
         return self._collection.query(**kwargs)
 

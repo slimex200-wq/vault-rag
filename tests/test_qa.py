@@ -193,3 +193,116 @@ def test_find_duplicates_respects_threshold(tmp_path: Path) -> None:
     # threshold of 0 means nothing qualifies (distance >= 0)
     dupes = engine.find_duplicates("anything", threshold=0.0)
     assert len(dupes) == 0
+
+
+# ---------------------------------------------------------------------------
+# Hybrid search tests
+# ---------------------------------------------------------------------------
+
+
+def test_hybrid_search_with_keyword(tmp_path: Path) -> None:
+    """hybrid_search with keyword uses where_document filter."""
+    store = VectorStore(persist_dir=tmp_path / "chroma")
+    store.upsert(
+        ids=["a.md"],
+        documents=["Python is a programming language."],
+        metadatas=[{"title": "Python", "tags": "python,programming"}],
+        embeddings=[[0.1] * 512],
+    )
+
+    engine = QAEngine(vector_store=store, embed_fn=_mock_embed, client=MagicMock(), model="test")
+    results = engine.hybrid_search("Python", keyword="programming")
+
+    assert len(results) >= 1
+    assert results[0]["metadata"]["title"] == "Python"
+
+
+def test_hybrid_search_with_tag_filter(tmp_path: Path) -> None:
+    """hybrid_search with filter_tags filters results by tag."""
+    store = VectorStore(persist_dir=tmp_path / "chroma")
+    store.upsert(
+        ids=["a.md", "b.md"],
+        documents=["Python basics", "JavaScript basics"],
+        metadatas=[
+            {"title": "Python", "tags": "python,backend"},
+            {"title": "JS", "tags": "javascript,frontend"},
+        ],
+        embeddings=[[0.1] * 512, [0.1] * 512],
+    )
+
+    engine = QAEngine(vector_store=store, embed_fn=_mock_embed, client=MagicMock(), model="test")
+    results = engine.hybrid_search("basics", filter_tags=["python"])
+
+    assert all("python" in r["metadata"]["tags"].lower() for r in results)
+
+
+def test_hybrid_search_empty_store(tmp_path: Path) -> None:
+    """hybrid_search on empty store returns empty list."""
+    store = VectorStore(persist_dir=tmp_path / "chroma")
+    engine = QAEngine(vector_store=store, embed_fn=_mock_embed, client=MagicMock(), model="test")
+    results = engine.hybrid_search("anything")
+    assert results == []
+
+
+# ---------------------------------------------------------------------------
+# Extract tests
+# ---------------------------------------------------------------------------
+
+
+def test_extract_returns_text(tmp_path: Path) -> None:
+    """extract() calls LLM and returns extracted text."""
+    store = VectorStore(persist_dir=tmp_path / "chroma")
+    client = _mock_anthropic("Key insight: AI agents can reason.")
+    engine = QAEngine(vector_store=store, embed_fn=_mock_embed, client=client, model="test")
+
+    results = [
+        {
+            "id": "a.md",
+            "document": "AI agents overview",
+            "metadata": {"title": "AI"},
+            "distance": 0.1,
+        }
+    ]
+    extracted = engine.extract(results, "What are AI agents?")
+
+    assert "Key insight" in extracted
+    client.messages.create.assert_called_once()
+
+
+def test_extract_requires_client(tmp_path: Path) -> None:
+    """extract() raises RuntimeError without a client."""
+    import pytest
+
+    store = VectorStore(persist_dir=tmp_path / "chroma")
+    engine = QAEngine(vector_store=store, embed_fn=_mock_embed, client=None, model="test")
+
+    with pytest.raises(RuntimeError, match="requires a client"):
+        engine.extract([], "query")
+
+
+# ---------------------------------------------------------------------------
+# Follow-up tests
+# ---------------------------------------------------------------------------
+
+
+def test_answer_with_follow_up(tmp_path: Path) -> None:
+    """answer with follow_up=True uses the follow-up prompt."""
+    store = VectorStore(persist_dir=tmp_path / "chroma")
+    store.upsert(
+        ids=["n.md"],
+        documents=["Some content"],
+        metadatas=[{"title": "Note"}],
+        embeddings=[[0.1] * 512],
+    )
+
+    client = _mock_anthropic("Answer here.\n\n## Follow-up Questions\n1. Q1?\n2. Q2?\n3. Q3?")
+    engine = QAEngine(vector_store=store, embed_fn=_mock_embed, client=client, model="test")
+
+    result = engine.answer("question?", follow_up=True)
+
+    assert "Follow-up" in result.answer
+    # Verify the follow-up prompt was used
+    call_kwargs = client.messages.create.call_args
+    messages = call_kwargs[1]["messages"]
+    user_msg = messages[0]["content"]
+    assert "Follow-up Questions" in user_msg

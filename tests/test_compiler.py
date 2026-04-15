@@ -383,3 +383,107 @@ def test_compile_and_extract_no_atoms(tmp_path: Path) -> None:
     result, created = compiler.compile_and_extract(note, vault_path=vault)
 
     assert created == []
+
+
+# ---------------------------------------------------------------------------
+# Further Questions tests
+# ---------------------------------------------------------------------------
+
+
+def test_compile_returns_further_questions() -> None:
+    response_json = json.dumps(
+        {
+            "summary": "test",
+            "tags": [],
+            "suggested_links": [],
+            "quality_score": 50,
+            "atoms": [],
+            "further_questions": [
+                "What are the limitations?",
+                "How does it compare to X?",
+                "What are future directions?",
+            ],
+        }
+    )
+    client = _mock_anthropic_response(response_json)
+    compiler = Compiler(client=client, model="test")
+    result = compiler.compile(_note())
+    assert len(result.further_questions) == 3
+    assert "limitations" in result.further_questions[0]
+
+
+def test_compile_without_further_questions() -> None:
+    """LLM response without further_questions returns empty list."""
+    response_json = '{"summary": "test", "tags": [], "suggested_links": []}'
+    client = _mock_anthropic_response(response_json)
+    compiler = Compiler(client=client, model="test")
+    result = compiler.compile(_note())
+    assert result.further_questions == []
+
+
+def test_compile_and_write_adds_further_questions_section(tmp_path: Path) -> None:
+    note_path = tmp_path / "fq.md"
+    note_path.write_text("# FQ Note\n\nContent.\n", encoding="utf-8")
+
+    response_json = json.dumps(
+        {
+            "summary": "FQ note",
+            "tags": ["fq"],
+            "suggested_links": [],
+            "further_questions": ["Q1?", "Q2?", "Q3?"],
+        }
+    )
+    client = _mock_anthropic_response(response_json)
+    compiler = Compiler(client=client, model="test")
+
+    note = ScannedNote(
+        path=note_path,
+        relative_path="fq.md",
+        title="FQ Note",
+        content="Content.",
+        tags=[],
+        links=[],
+        modified=time.time(),
+        content_hash="fq",
+    )
+    compiler.compile_and_write(note)
+
+    updated = note_path.read_text(encoding="utf-8")
+    assert "## Further Questions" in updated
+    assert "1. Q1?" in updated
+    assert "2. Q2?" in updated
+    assert "3. Q3?" in updated
+
+
+def test_compile_and_write_no_duplicate_further_questions(tmp_path: Path) -> None:
+    note_path = tmp_path / "fq_dup.md"
+    note_path.write_text(
+        "# FQ Note\n\nContent.\n\n## Further Questions\n\n1. Existing?\n",
+        encoding="utf-8",
+    )
+
+    response_json = json.dumps(
+        {
+            "summary": "s",
+            "tags": [],
+            "suggested_links": [],
+            "further_questions": ["New Q?"],
+        }
+    )
+    client = _mock_anthropic_response(response_json)
+    compiler = Compiler(client=client, model="test")
+
+    note = ScannedNote(
+        path=note_path,
+        relative_path="fq_dup.md",
+        title="FQ Note",
+        content="Content.",
+        tags=[],
+        links=[],
+        modified=time.time(),
+        content_hash="fqd",
+    )
+    compiler.compile_and_write(note)
+
+    updated = note_path.read_text(encoding="utf-8")
+    assert updated.count("## Further Questions") == 1

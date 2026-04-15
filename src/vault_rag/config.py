@@ -15,7 +15,7 @@ class VaultConfig:
     )
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 512
-    compile_model: str = "claude-sonnet-4-20250514"
+    compile_model: str = "claude-haiku-4-5-20251001"
     qa_model: str = "claude-sonnet-4-20250514"
     max_context_tokens: int = 4000
     chunk_size: int = 500
@@ -47,3 +47,8 @@ class VaultConfig:
     def graph_path(self) -> Path:
         """Knowledge graph JSON file path."""
         return self.vault_path.parent / "vault-rag" / "data" / "graph.json"
+
+    @property
+    def output_path(self) -> Path:
+        """Generated output directory."""
+        return self.vault_path.parent / "vault-rag" / "output"
