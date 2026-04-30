@@ -7,7 +7,7 @@ Karpathy-style personal knowledge RAG system for Obsidian vaults.
 ## Current Status
 
 - Active Python package with tests, coverage config, Ruff, and CLI entry point.
-- `.omc/` is currently untracked; do not clean it up unless explicitly asked.
+- AI harness files are committed and pushed on `master`.
 - `CLAUDE.md` contains the current architecture and default path assumptions.
 
 ## Next Work Queue
@@ -15,6 +15,19 @@ Karpathy-style personal knowledge RAG system for Obsidian vaults.
 - Keep retrieval, graph, compile, and QA changes tested.
 - Keep import-time dependencies light.
 - Update docs when CLI behavior or default paths change.
+
+## Known Blockers
+
+- Live API behavior requires OpenAI/Anthropic credentials and cost-aware testing.
+
+## Last Verified
+
+- 2026-04-30: `python -m pytest tests/ -q`, `ruff check .`, and `ruff format --check .` passed.
+- Known gap: live OpenAI/Anthropic API calls were not performed.
+
+## Related Vault Notes
+
+- `C:/Users/slime/claude-projects/Obsidian Vault/Projects/vault-rag/`
 
 ## Handoff Rule
 
