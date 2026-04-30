@@ -1,3 +1,7 @@
+# Shared Harness
+
+Read `AGENTS.md`, `PROJECT_STATE.md`, `CHECKS.md`, and `DECISIONS.md` before making changes. The details below remain authoritative for repo-specific commands, architecture, and design decisions.
+
 # vault-rag
 
 Karpathy-style personal knowledge RAG system for Obsidian vaults.  

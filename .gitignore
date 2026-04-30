@@ -7,3 +7,6 @@ dist/
 *.pyc
 .env
 .coverage
+.omc/
+.omx/
+.superpowers/

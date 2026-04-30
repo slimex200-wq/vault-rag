@@ -483,9 +483,7 @@ def compile_new_cmd(dry_run: bool) -> None:
     help="Max cosine distance for a link (0=identical, 2=opposite)",
 )
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without writing")
-@click.option(
-    "--limit", default=0, show_default=True, help="Only process first N notes (0 = all)"
-)
+@click.option("--limit", default=0, show_default=True, help="Only process first N notes (0 = all)")
 def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int) -> None:
     """Add `## Related` section via semantic similarity (no LLM)."""
     from vault_rag.engine.indexer import create_openai_embed_fn
@@ -567,7 +565,7 @@ def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int) -> None:
                 continue
 
             links_md = "\n".join(f"- [[{t}]]" for t in titles)
-            suffix = f"\n\n## Related\n\n{links_md}\n".encode("utf-8")
+            suffix = f"\n\n## Related\n\n{links_md}\n".encode()
             note.path.write_bytes(raw.rstrip() + suffix)
             written += 1
 

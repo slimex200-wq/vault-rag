@@ -2,6 +2,16 @@
 
 Obsidian Vault를 위한 개인 지식 RAG 시스템.
 
+## AI Harness
+
+Before asking Claude, Codex, or another coding agent to work here, read:
+
+- `AGENTS.md` — repository rules for AI agents
+- `CLAUDE.md` — architecture, commands, and design decisions
+- `PROJECT_STATE.md` — current status and next work
+- `CHECKS.md` — test, lint, and formatting gates
+- `DECISIONS.md` — architecture and model-usage decisions
+
 ## 왜 만들었나
 
 Andrej Karpathy가 X에 올린 글에서 시작됐습니다:
