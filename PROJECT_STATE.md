@@ -8,7 +8,7 @@ Karpathy-style personal knowledge RAG system for Obsidian vaults.
 
 - Active Python package with tests, coverage config, Ruff, and CLI entry point.
 - AI harness files are committed and pushed on `master`.
-- `CLAUDE.md` contains the current architecture and default path assumptions.
+- `CLAUDE.md` is a thin Claude/OMC adapter; architecture and default path assumptions live in `README.md`, `DECISIONS.md`, `CHECKS.md`, and this file.
 
 ## Next Work Queue
 

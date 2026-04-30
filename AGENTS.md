@@ -1,18 +1,18 @@
-# AI Harness
+# Shared AI Entry Point
 
-Before making changes, read:
+This repo is used by Codex/OMX and Claude/OMC. Follow your local runtime rules first; this file only points to project-specific context.
 
-1. `PROJECT_STATE.md` — current status, active goal, blockers, and next work.
-2. `CLAUDE.md` — repository-specific architecture, commands, and design decisions.
-3. `CHECKS.md` — commands and manual checks that prove a change is safe.
-4. `DECISIONS.md` — decisions that should not be re-litigated casually.
-5. `GITHUB_WORKFLOW.md` — issue, branch, PR, and sync rules.
-6. `README.md` — public setup and usage details.
+Before changing files, read:
 
-## Operating Rules
+1. `PROJECT_STATE.md` - current status, next work, blockers, and last verification.
+2. `CHECKS.md` - repo-specific verification commands and risk checks.
+3. `DECISIONS.md` - retrieval, model, path, and architecture decisions.
+4. `GITHUB_WORKFLOW.md` - default branch, issue, PR, and sync rules.
+5. `README.md` - public setup and usage details.
 
-- Preserve user changes and untracked work. Check `git status --short` before edits.
-- Keep CLI startup light; avoid adding heavy import-time dependencies.
-- Do not change default vault paths, model choices, or exclusion rules without updating docs and tests.
-- After meaningful changes, run the smallest relevant check from `CHECKS.md` and report any known gap.
-- Update `PROJECT_STATE.md` at handoff when status, next work, blockers, or verification changes.
+Project facts in those files override generic assumptions. Keep this file thin; put durable project facts in the dedicated harness files.
+
+## Local Context
+
+- Keep CLI startup light.
+- Retrieval, indexing, graph, and model changes need focused tests or explicit live-API gaps.
