@@ -121,7 +121,18 @@ def health_cmd() -> None:
     config = _get_config()
     scanner = VaultScanner(config)
     notes = scanner.scan()
-    checker = HealthChecker(notes)
+    ignored_dirs = {".git", ".obsidian", "_trash"}
+    existing_paths = {
+        path.relative_to(config.vault_path).as_posix()
+        for path in config.vault_path.rglob("*")
+        if path.is_file()
+        and not any(
+            part in ignored_dirs
+            or any(part.startswith(prefix) for prefix in config.excluded_dir_prefixes)
+            for part in path.relative_to(config.vault_path).parts
+        )
+    }
+    checker = HealthChecker(notes, existing_paths=existing_paths)
     report = checker.report()
 
     click.echo(f"Health report for: {config.vault_path}")
@@ -484,8 +495,10 @@ def compile_new_cmd(dry_run: bool) -> None:
 )
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without writing")
 @click.option("--limit", default=0, show_default=True, help="Only process first N notes (0 = all)")
-def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int) -> None:
+@click.option("--orphans-only", is_flag=True, default=False, help="Only process health-check orphan notes")
+def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int, orphans_only: bool) -> None:
     """Add `## Related` section via semantic similarity (no LLM)."""
+    from vault_rag.engine.health import HealthChecker
     from vault_rag.engine.indexer import create_openai_embed_fn
     from vault_rag.ingest.scanner import VaultScanner
     from vault_rag.store.vector_store import VectorStore
@@ -493,6 +506,9 @@ def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int) -> None:
     config = _get_config()
     scanner = VaultScanner(config)
     notes = scanner.scan()
+    if orphans_only:
+        orphan_paths = set(HealthChecker(notes).orphan_notes())
+        notes = [note for note in notes if note.relative_path in orphan_paths]
     if limit > 0:
         notes = notes[:limit]
 

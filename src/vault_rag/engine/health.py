@@ -17,7 +17,7 @@ def _normalize(text: str) -> str:
 class HealthChecker:
     """Run health checks against a list of ScannedNote objects."""
 
-    def __init__(self, notes: list[ScannedNote]) -> None:
+    def __init__(self, notes: list[ScannedNote], existing_paths: set[str] | None = None) -> None:
         self._notes = notes
 
         # Pre-compute lookup sets for O(1) resolution
@@ -29,6 +29,12 @@ class HealthChecker:
         # e.g. "Projects/flatsnap/INDEX.md" and "projects/flatsnap/index.md"
         self._all_paths_lower: set[str] = {
             n.relative_path.replace("\\", "/").lower() for n in notes
+        }
+        self._existing_paths_lower: set[str] = {
+            p.replace("\\", "/").lower() for p in (existing_paths or set())
+        }
+        self._existing_names_lower: set[str] = {
+            p.replace("\\", "/").lower().rsplit("/", 1)[-1] for p in (existing_paths or set())
         }
         # Paths without .md extension for bare path links like [[Projects/flatsnap/INDEX]]
         self._paths_no_ext: set[str] = {
@@ -67,9 +73,15 @@ class HealthChecker:
 
         # Path-based match: [[Projects/flatsnap/INDEX]] → Projects/flatsnap/INDEX.md
         normalized = cleaned.replace("\\", "/").lower()
+        if normalized in self._all_paths_lower or normalized in self._existing_paths_lower:
+            return True
+        if "/" not in normalized and normalized in self._existing_names_lower:
+            return True
         if normalized in self._paths_no_ext:
             return True
         if (normalized + ".md") in self._all_paths_lower:
+            return True
+        if (normalized + ".md") in self._existing_paths_lower:
             return True
 
         return False

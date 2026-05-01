@@ -137,7 +137,41 @@ def test_path_based_links_not_broken() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 7. backslash-suffixed path links should not be broken
+# 7. explicit .md path wikilinks should not be broken
+# ---------------------------------------------------------------------------
+
+
+def test_explicit_md_path_links_not_broken() -> None:
+    """[[Daily/2026-04-19.md]] should resolve directly."""
+    notes = [
+        _note("Hub", "hub.md", links=["Daily/2026-04-19.md"]),
+        _note("2026-04-19", "Daily/2026-04-19.md"),
+    ]
+    hc = HealthChecker(notes)
+    broken = hc.broken_links()
+    assert len(broken) == 0
+
+
+# ---------------------------------------------------------------------------
+# 8. existing non-indexed files should not be broken
+# ---------------------------------------------------------------------------
+
+
+def test_existing_non_indexed_files_not_broken() -> None:
+    """Existing template/image targets can be valid vault links even when not scanned as notes."""
+    notes = [
+        _note("Hub", "hub.md", links=["Templates/INDEX", "Reference/design-ref/card.png", "card.png"])
+    ]
+    hc = HealthChecker(
+        notes,
+        existing_paths={"Templates/INDEX.md", "Reference/design-ref/card.png"},
+    )
+    broken = hc.broken_links()
+    assert len(broken) == 0
+
+
+# ---------------------------------------------------------------------------
+# 9. backslash-suffixed path links should not be broken
 # ---------------------------------------------------------------------------
 
 
