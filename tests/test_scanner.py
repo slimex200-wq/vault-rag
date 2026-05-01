@@ -45,6 +45,17 @@ def test_scan_excludes_trash(tmp_vault: Path, cfg: VaultConfig) -> None:
     assert not any("_trash" in n.relative_path for n in notes)
 
 
+def test_scan_excludes_dedupe_trash_prefix(tmp_vault: Path, cfg: VaultConfig) -> None:
+    dedupe_trash = tmp_vault / ".dedupe-trash-2026-04-25"
+    dedupe_trash.mkdir()
+    (dedupe_trash / "duplicate.md").write_text("# Duplicate\n\nOld duplicate note.", encoding="utf-8")
+
+    scanner = VaultScanner(cfg)
+    notes = scanner.scan()
+
+    assert not any(".dedupe-trash-" in n.relative_path for n in notes)
+
+
 # ---------------------------------------------------------------------------
 # 4. title extracted from first # heading
 # ---------------------------------------------------------------------------

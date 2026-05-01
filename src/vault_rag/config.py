@@ -27,6 +27,9 @@ class VaultConfig:
         "docs",
         "Templates",
     )
+    excluded_dir_prefixes: tuple[str, ...] = (
+        ".dedupe-trash-",
+    )
     priority_dirs: tuple[str, ...] = (
         "Projects",
         "Knowledge",

@@ -94,9 +94,13 @@ class VaultScanner:
     # ------------------------------------------------------------------
 
     def _is_excluded(self, path: Path) -> bool:
-        """Return True if any component of *path* is in excluded_dirs."""
+        """Return True if any component of *path* is configured as excluded."""
         excluded = set(self._config.excluded_dirs)
-        return any(part in excluded for part in path.parts)
+        excluded_prefixes = self._config.excluded_dir_prefixes
+        return any(
+            part in excluded or any(part.startswith(prefix) for prefix in excluded_prefixes)
+            for part in path.parts
+        )
 
     def _parse(
         self,
