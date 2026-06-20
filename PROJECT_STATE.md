@@ -22,8 +22,11 @@ Karpathy-style personal knowledge RAG system for Obsidian vaults.
 
 ## Last Verified
 
+- 2026-06-20: LLM 인증을 Claude 구독 OAuth 로 전환(`llm_client.make_anthropic_client`).
+  실호출 검증 완료 — OAuth 직접 호출 OK, `ask` end-to-end OK(구독 과금, API 키 미사용).
+  `qa_model` 을 죽은 `claude-sonnet-4-20250514`(404) → `claude-sonnet-4-6` 로 교체.
+  ChromaDB 전체 재인덱싱(4,013 → 4,084 노트, 61s). pytest 155 passed, ruff clean.
 - 2026-04-30: `python -m pytest tests/ -q`, `ruff check .`, and `ruff format --check .` passed.
-- Known gap: live OpenAI/Anthropic API calls were not performed.
 
 ## Related Vault Notes
 
