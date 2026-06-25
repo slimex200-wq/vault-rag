@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import click
@@ -26,6 +27,15 @@ def _get_config() -> VaultConfig:
 @click.version_option(package_name="vault-rag")
 def cli() -> None:
     """vault-rag: Karpathy-style LLM Wiki for Obsidian vaults."""
+    # Windows 콘솔(cp949 등)에서 유니코드(— 같은 문자) 출력 시
+    # UnicodeEncodeError로 죽는 것을 막는다. 출력 인코딩만 UTF-8로 강제.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
 
 
 # ---------------------------------------------------------------------------
