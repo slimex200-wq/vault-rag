@@ -1,11 +1,16 @@
 """Tests for VaultConfig dataclass."""
 
+from pathlib import Path
+
 from vault_rag.config import VaultConfig
 
 
 def test_default_config_has_vault_path():
     cfg = VaultConfig()
-    assert cfg.vault_path.exists(), f"vault_path does not exist: {cfg.vault_path}"
+    # 기본 vault 경로가 Path 타입으로 설정돼 있는지만 검사한다.
+    # 실제 디스크 존재 여부는 머신마다 달라(CI엔 없음) 코드 동작 테스트가 아니므로 제외.
+    assert isinstance(cfg.vault_path, Path)
+    assert cfg.vault_path.name == "Obsidian Vault"
 
 
 def test_config_with_custom_path(tmp_path):
