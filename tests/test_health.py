@@ -46,6 +46,39 @@ def test_detect_broken_links() -> None:
     assert broken[0]["target"] == "NonExistent"
 
 
+def test_subpath_links_resolve() -> None:
+    """[[note#heading]] and [[note#^block]] must resolve to the base note."""
+    a = _note("A", "a.md", links=["B#남은 작업", "B#^block-ref", "#local-heading"])
+    b = _note("B", "b.md")
+    checker = HealthChecker([a, b])
+    assert checker.broken_links() == []
+
+
+def test_subpath_inbound_counts_for_orphans() -> None:
+    """A note referenced only via [[note#heading]] is not an orphan."""
+    a = _note("A", "a.md", links=["B#section"])
+    b = _note("B", "b.md")
+    checker = HealthChecker([a, b])
+    assert "b.md" not in checker.orphan_notes()
+
+
+def test_path_link_inbound_counts_for_orphans() -> None:
+    """A note referenced by vault path ([[Dir/Sub/B]]) is not an orphan."""
+    a = _note("A", "a.md", links=["Dir/Sub/B"])
+    b = _note("B", "Dir/Sub/B.md")
+    checker = HealthChecker([a, b])
+    assert "Dir/Sub/B.md" not in checker.orphan_notes()
+
+
+def test_hash_in_note_name_still_resolves() -> None:
+    """Note titles containing '#' must match before subpath stripping."""
+    a = _note("A", "a.md", links=["Batch 2 작업 #3a 완료 - DEV 덤프 버튼 구현"])
+    b = _note("Batch 2 작업 #3a 완료 - DEV 덤프 버튼 구현", "b.md")
+    checker = HealthChecker([a, b])
+    assert checker.broken_links() == []
+    assert "b.md" not in checker.orphan_notes()
+
+
 # ---------------------------------------------------------------------------
 # 2. test_detect_orphan_notes
 # ---------------------------------------------------------------------------

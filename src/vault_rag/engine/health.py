@@ -65,6 +65,19 @@ class HealthChecker:
         """Return True if *link* resolves to a known note."""
         # Strip trailing backslash and whitespace (handles [[path\]] artifacts)
         cleaned = link.strip().rstrip("\\")
+        if self._resolves(cleaned):
+            return True
+        # Retry with Obsidian subpath dropped ([[note#heading]], [[note#^block]]).
+        # Full-string match runs first so note names containing '#' still win.
+        if "#" in cleaned:
+            base = cleaned.split("#", 1)[0].strip()
+            if not base:
+                return True  # pure in-file anchor like [[#heading]]
+            return self._resolves(base)
+        return False
+
+    def _resolves(self, cleaned: str) -> bool:
+        """Return True if *cleaned* matches a known title, stem, or path."""
         key = _normalize(cleaned)
 
         # Title / stem match (existing behaviour)
@@ -92,11 +105,25 @@ class HealthChecker:
         Returns:
             [relative_path, ...]
         """
-        # Collect all inbound targets (normalized)
+        # Collect all inbound targets (normalized titles/stems + paths)
         inbound_targets: set[str] = set()
+        inbound_paths: set[str] = set()
         for note in self._notes:
             for link in note.links:
-                inbound_targets.add(_normalize(link))
+                full = link.strip().rstrip("\\")
+                # Register both the full text (note names may contain '#')
+                # and the subpath-stripped base ([[note#heading]]).
+                variants = {full}
+                if "#" in full:
+                    variants.add(full.split("#", 1)[0].strip())
+                for variant in variants:
+                    if not variant:
+                        continue
+                    inbound_targets.add(_normalize(variant))
+                    path = variant.replace("\\", "/").lower()
+                    if not path.endswith(".md"):
+                        path += ".md"
+                    inbound_paths.add(path)
 
         orphans: list[str] = []
         for note in self._notes:
@@ -104,6 +131,7 @@ class HealthChecker:
             is_linked = (
                 _normalize(note.title) in inbound_targets
                 or _normalize(note.path.stem) in inbound_targets
+                or note.relative_path.replace("\\", "/").lower() in inbound_paths
             )
             if not has_outbound and not is_linked:
                 orphans.append(note.relative_path)
