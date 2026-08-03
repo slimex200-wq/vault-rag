@@ -114,10 +114,13 @@ class Compiler:
             return result
 
         raw = note.path.read_bytes()
-        content = raw.decode("utf-8")
-        content = self._update_frontmatter(content, result)
+        original = raw.decode("utf-8")
+        content = self._update_frontmatter(original, result)
         content = self._add_related_links(content, result.suggested_links, known_titles)
         content = self._add_further_questions(content, result.further_questions)
+        if content == original:
+            # No effective change - skip the write so watchers don't re-fire.
+            return result
         note.path.write_bytes(content.encode("utf-8"))
         return result
 

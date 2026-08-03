@@ -660,17 +660,39 @@ def audit_cmd() -> None:
 @cli.command("watch")
 def watch_cmd() -> None:
     """Watch vault for .md changes and auto-compile + index."""
+    import hashlib
+
     from vault_rag.engine.watcher import VaultWatcher
 
     config = _get_config()
     click.echo(f"Watching {config.vault_path} ... (Ctrl+C to stop)")
 
+    # Self-write registry: path -> sha256 of the content this process last
+    # wrote, so compile_and_write's own write-back doesn't re-trigger compile.
+    self_writes: dict[str, str] = {}
+
+    def _hash_file(path: Path) -> str | None:
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            return None
+
     def on_change(path: Path) -> None:
+        key = str(path.resolve())
+        current = _hash_file(path)
+        if current is not None and self_writes.get(key) == current:
+            return  # Our own write-back - skip to avoid an infinite loop.
         click.echo(f"\nChange detected: {path.name}")
         try:
             _auto_compile_and_index(path, config)
         except Exception as exc:  # noqa: BLE001
             click.echo(f"  Error: {exc}", err=True)
+        else:
+            written = _hash_file(path)
+            if written is not None:
+                self_writes[key] = written
+            else:
+                self_writes.pop(key, None)
 
     watcher = VaultWatcher(config=config, on_change=on_change)
     watcher.start()
