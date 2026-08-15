@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from vault_rag.config import VaultConfig
@@ -19,6 +19,28 @@ _RE_INLINE_TAGS = re.compile(r"(?:^|\s)#([a-zA-Z가-힣][\w가-힣-]*)", re.MULT
 _RE_WIKILINKS = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 _RE_H1 = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 _RE_CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
+_RE_FM_SCALAR = re.compile(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$")
+
+
+def _parse_frontmatter_scalars(frontmatter: str) -> dict[str, str]:
+    """Return top-level ``key: value`` pairs from a frontmatter block.
+
+    Deliberately shallow: nested maps and list items are skipped, because the
+    only consumers are classification axes (status, type, category, tier) which
+    are single scalars. Keeping this dependency-free avoids pulling a YAML
+    parser into the scan hot path.
+    """
+    result: dict[str, str] = {}
+    for line in frontmatter.splitlines():
+        if not line or line[0] in " \t-#":
+            continue  # nested value, list item, or comment
+        match = _RE_FM_SCALAR.match(line)
+        if match is None:
+            continue
+        value = match.group(2).strip().strip("\"'").strip()
+        if value and not value.startswith(("[", "{")):
+            result[match.group(1)] = value
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +60,7 @@ class ScannedNote:
     links: list[str]  # wikilink targets
     modified: float  # mtime
     content_hash: str  # md5 hex digest of raw file content
+    frontmatter: dict[str, str] = field(default_factory=dict)  # top-level scalars only
 
 
 # ---------------------------------------------------------------------------
@@ -130,8 +153,11 @@ class VaultScanner:
                         if tag:
                             fm_tags.append(tag)
 
-        # --- inline tags from body ---
-        inline_tags = _RE_INLINE_TAGS.findall(body)
+        # --- inline tags from body (code fences removed first) ---
+        # Without this, `#f8f9fa` in a CSS snippet and `#lofi` in a sample
+        # YouTube description become vault tags. Wikilink extraction below
+        # already strips fences; tags have to agree.
+        inline_tags = _RE_INLINE_TAGS.findall(_RE_CODE_BLOCK.sub("", body))
 
         # --- combined, deduplicated, order-preserving ---
         all_tags = list(dict.fromkeys(fm_tags + inline_tags))
@@ -154,4 +180,5 @@ class VaultScanner:
             links=links,
             modified=path.stat().st_mtime,
             content_hash=content_hash,
+            frontmatter=_parse_frontmatter_scalars(frontmatter),
         )

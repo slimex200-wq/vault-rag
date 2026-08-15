@@ -33,6 +33,8 @@ class LintResult:
     orphan_count: int = 0
     broken_link_count: int = 0
     untagged_count: int = 0
+    pages_examined: int = 0
+    next_offset: int = 0
 
     @property
     def total_issues(self) -> int:
@@ -59,11 +61,17 @@ class WikiLinter:
         notes: list[ScannedNote],
         health_report: dict | None = None,
         max_pages: int = 50,
+        offset: int = 0,
     ) -> LintResult:
-        """Run lint on a sample of wiki pages.
+        """Run lint on a rotating window of wiki pages.
 
         Combines structural checks (from HealthChecker) with
         LLM-powered semantic checks (contradictions, stale claims, gaps).
+
+        A vault far larger than *max_pages* cannot be audited in one pass, so
+        the window advances by *offset* and wraps around. Persist the returned
+        ``next_offset`` and feed it back on the following run; consecutive runs
+        then sweep the whole vault instead of re-reading the same head slice.
         """
         # Structural stats from health report
         orphan_count = health_report.get("orphan_count", 0) if health_report else 0
@@ -72,14 +80,20 @@ class WikiLinter:
 
         # Sample pages for LLM analysis (prioritize compiled pages)
         compiled = [n for n in notes if "compiled:" in n.content[:500]]
-        sample = compiled[:max_pages] if compiled else notes[:max_pages]
+        pool = compiled if compiled else notes
 
-        if not sample:
+        if not pool or max_pages <= 0:
             return LintResult(
                 orphan_count=orphan_count,
                 broken_link_count=broken_link_count,
                 untagged_count=untagged_count,
+                next_offset=offset,
             )
+
+        start = offset % len(pool)
+        take = min(max_pages, len(pool))
+        sample = (pool + pool)[start : start + take]
+        next_offset = (start + take) % len(pool)
 
         # Build context for LLM
         pages_text = "\n\n---\n\n".join(f"[{n.title}]\n{n.content[:500]}" for n in sample)
@@ -102,6 +116,8 @@ class WikiLinter:
             orphan_count=orphan_count,
             broken_link_count=broken_link_count,
             untagged_count=untagged_count,
+            pages_examined=len(sample),
+            next_offset=next_offset,
         )
 
     def _parse_response(self, text: str) -> dict:

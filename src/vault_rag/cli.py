@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
 
 import click
@@ -17,6 +19,70 @@ def _get_config() -> VaultConfig:
     return VaultConfig()
 
 
+# Cap on per-issue listings. Orphan/broken-link counts run into the thousands
+# on a mature vault, and dumping every row buries the summary.
+_LIST_CAP = 20
+
+
+def _echo_truncated(total: int) -> None:
+    if total > _LIST_CAP:
+        click.echo(f"  ... and {total - _LIST_CAP} more")
+
+
+def _lint_cursor_path(config: VaultConfig) -> Path:
+    return Path(config.chroma_path).parent / "lint-cursor.json"
+
+
+def _read_lint_cursor(config: VaultConfig) -> int:
+    path = _lint_cursor_path(config)
+    if not path.exists():
+        return 0
+    try:
+        return int(json.loads(path.read_text(encoding="utf-8")).get("offset", 0))
+    except (ValueError, OSError, json.JSONDecodeError):
+        return 0
+
+
+def _write_lint_cursor(config: VaultConfig, offset: int) -> None:
+    path = _lint_cursor_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"offset": offset}), encoding="utf-8")
+
+
+# Metrics the --strict gate refuses to let grow. A one-off cleanup does not
+# stick unless something fails when the vault slides back.
+_GATED_METRICS = (
+    "broken_link_count",
+    "orphan_count",
+    "isolated_count",
+    "untagged_count",
+    "vocabulary_violation_count",
+    "singleton_tag_count",
+)
+
+
+def _health_baseline_path(config: VaultConfig) -> Path:
+    return Path(config.chroma_path).parent / "health-baseline.json"
+
+
+def _read_health_baseline(config: VaultConfig) -> dict[str, int] | None:
+    path = _health_baseline_path(config)
+    if not path.exists():
+        return None
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return {k: int(v) for k, v in loaded.items() if k in _GATED_METRICS}
+
+
+def _write_health_baseline(config: VaultConfig, metrics: dict[str, int]) -> Path:
+    path = _health_baseline_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
 # ---------------------------------------------------------------------------
 # CLI group
 # ---------------------------------------------------------------------------
@@ -26,6 +92,13 @@ def _get_config() -> VaultConfig:
 @click.version_option(package_name="vault-rag")
 def cli() -> None:
     """vault-rag: Karpathy-style LLM Wiki for Obsidian vaults."""
+    # Vault content is UTF-8 (Korean prose, em-dashes, arrows) but a Windows
+    # console defaults to cp949, which raises UnicodeEncodeError mid-report and
+    # kills the command. Reporting must never die on a character.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +186,19 @@ def scan_cmd() -> None:
 
 
 @cli.command("health")
-def health_cmd() -> None:
+@click.option(
+    "--strict",
+    is_flag=True,
+    default=False,
+    help="Exit non-zero if any metric is worse than the saved baseline",
+)
+@click.option(
+    "--save-baseline",
+    is_flag=True,
+    default=False,
+    help="Record current metrics as the baseline --strict compares against",
+)
+def health_cmd(strict: bool, save_baseline: bool) -> None:
     """Run health checks and show a summary report."""
     from vault_rag.engine.health import HealthChecker
     from vault_rag.ingest.scanner import VaultScanner
@@ -138,18 +223,107 @@ def health_cmd() -> None:
     click.echo(f"Health report for: {config.vault_path}")
     click.echo(f"  Total notes   : {report['total_notes']}")
     click.echo(f"  Broken links  : {report['broken_link_count']}")
-    click.echo(f"  Orphan notes  : {report['orphan_count']}")
+    click.echo(f"  Orphan notes  : {report['orphan_count']} (no inbound link)")
+    click.echo(f"  Isolated notes: {report['isolated_count']} (no links at all)")
     click.echo(f"  Untagged notes: {report['untagged_count']}")
+    click.echo(f"  Vocab breaches: {report['vocabulary_violation_count']}")
+    click.echo(f"  Singleton tags: {report['singleton_tag_count']}")
+
+    if report["vocabulary_violation_count"]:
+        click.echo("\nVocabulary violations:")
+        for line in report["vocabulary_violations"][:_LIST_CAP]:
+            click.echo(f"  {line}")
+        _echo_truncated(report["vocabulary_violation_count"])
 
     if report["broken_link_count"]:
         click.echo("\nBroken links:")
-        for bl in report["broken_links"]:
+        for bl in report["broken_links"][:_LIST_CAP]:
             click.echo(f"  {bl['source']} -> [[{bl['target']}]]")
+        _echo_truncated(report["broken_link_count"])
 
     if report["orphan_notes"]:
         click.echo("\nOrphan notes:")
-        for path in report["orphan_notes"]:
+        for path in report["orphan_notes"][:_LIST_CAP]:
             click.echo(f"  {path}")
+        _echo_truncated(report["orphan_count"])
+
+    current = {name: int(report[name]) for name in _GATED_METRICS}
+
+    if save_baseline:
+        saved_to = _write_health_baseline(config, current)
+        click.echo(f"\nBaseline saved: {saved_to}")
+
+    if strict:
+        baseline = _read_health_baseline(config)
+        if baseline is None:
+            click.echo("\nNo baseline recorded. Run `vault-rag health --save-baseline` first.")
+            raise SystemExit(2)
+        regressions = [
+            (name, baseline[name], current[name])
+            for name in _GATED_METRICS
+            if name in baseline and current[name] > baseline[name]
+        ]
+        if regressions:
+            click.echo("\nREGRESSION vs baseline:")
+            for name, was, now in regressions:
+                click.echo(f"  {name}: {was} -> {now}  (+{now - was})")
+            raise SystemExit(1)
+        click.echo("\nNo regression against baseline.")
+
+
+# ---------------------------------------------------------------------------
+# link-orphans
+# ---------------------------------------------------------------------------
+
+
+@cli.command("link-orphans")
+@click.option(
+    "--apply",
+    "apply_changes",
+    is_flag=True,
+    default=False,
+    help="Write the links (default: dry run)",
+)
+def link_orphans_cmd(apply_changes: bool) -> None:
+    """Give every orphan an inbound link from its nearest INDEX."""
+    from vault_rag.engine import orphan_linker
+    from vault_rag.engine.health import HealthChecker
+    from vault_rag.ingest.scanner import VaultScanner
+
+    config = _get_config()
+    notes = VaultScanner(config).scan()
+    by_path = {note.relative_path: note for note in notes}
+
+    orphan_paths = HealthChecker(notes).orphan_notes()
+    orphans = [(path, by_path[path].title) for path in orphan_paths]
+    index_paths = {p for p in by_path if p.rsplit("/", 1)[-1] == "INDEX.md"}
+
+    links, unplaceable = orphan_linker.plan_links(orphans, index_paths)
+
+    click.echo(f"Orphans: {len(orphans)}")
+    click.echo(f"  linkable from an INDEX : {len(links)}")
+    click.echo(f"  no INDEX above them    : {len(unplaceable)}")
+
+    per_index: dict[str, int] = {}
+    for link in links:
+        per_index[link.index_path] = per_index.get(link.index_path, 0) + 1
+    click.echo(f"\nINDEX files to update: {len(per_index)}")
+    for index_path, count in sorted(per_index.items(), key=lambda kv: (-kv[1], kv[0]))[:_LIST_CAP]:
+        click.echo(f"  {count:>3}  {index_path}")
+    _echo_truncated(len(per_index))
+
+    if unplaceable:
+        click.echo("\nNeeds a human decision (no ancestor INDEX):")
+        for path in unplaceable[:_LIST_CAP]:
+            click.echo(f"  {path}")
+        _echo_truncated(len(unplaceable))
+
+    if not apply_changes:
+        click.echo("\nDry run. Re-run with --apply to write.")
+        return
+
+    written = orphan_linker.apply_links(config.vault_path, links)
+    click.echo(f"\nUpdated {len(written)} INDEX files.")
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +669,9 @@ def compile_new_cmd(dry_run: bool) -> None:
 )
 @click.option("--dry-run", is_flag=True, default=False, help="Preview without writing")
 @click.option("--limit", default=0, show_default=True, help="Only process first N notes (0 = all)")
-@click.option("--orphans-only", is_flag=True, default=False, help="Only process health-check orphan notes")
+@click.option(
+    "--orphans-only", is_flag=True, default=False, help="Only process health-check orphan notes"
+)
 def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int, orphans_only: bool) -> None:
     """Add `## Related` section via semantic similarity (no LLM)."""
     from vault_rag.engine.health import HealthChecker
@@ -507,7 +683,10 @@ def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int, orphans_
     scanner = VaultScanner(config)
     notes = scanner.scan()
     if orphans_only:
-        orphan_paths = set(HealthChecker(notes).orphan_notes())
+        # isolated_notes(), not orphan_notes(): this flag targets notes with no
+        # links at all, which is what a `## Related` section can actually fix.
+        # Adding outbound links to an inbound-orphan does not make it reachable.
+        orphan_paths = set(HealthChecker(notes).isolated_notes())
         notes = [note for note in notes if note.relative_path in orphan_paths]
     if limit > 0:
         notes = notes[:limit]
@@ -878,14 +1057,19 @@ def lint_cmd() -> None:
 
     click.echo(f"Structural checks ({len(notes)} notes):")
     click.echo(f"  Broken links : {health['broken_link_count']}")
-    click.echo(f"  Orphan notes : {health['orphan_count']}")
+    click.echo(f"  Orphan notes : {health['orphan_count']} (no inbound link)")
+    click.echo(f"  Isolated     : {health['isolated_count']} (no links at all)")
     click.echo(f"  Untagged     : {health['untagged_count']}")
 
-    # LLM semantic checks
+    # LLM semantic checks over a rotating window, so repeated runs sweep the
+    # whole vault instead of re-auditing the same head slice every time.
+    offset = _read_lint_cursor(config)
     click.echo("\nRunning LLM analysis...")
     client = Anthropic()
     linter = WikiLinter(client=client, model=config.compile_model)
-    result = linter.lint(notes, health_report=health)
+    result = linter.lint(notes, health_report=health, offset=offset)
+    _write_lint_cursor(config, result.next_offset)
+    click.echo(f"  Examined {result.pages_examined} pages from offset {offset}")
 
     if result.contradictions:
         click.echo(f"\nContradictions ({len(result.contradictions)}):")

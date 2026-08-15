@@ -48,7 +48,9 @@ def test_scan_excludes_trash(tmp_vault: Path, cfg: VaultConfig) -> None:
 def test_scan_excludes_dedupe_trash_prefix(tmp_vault: Path, cfg: VaultConfig) -> None:
     dedupe_trash = tmp_vault / ".dedupe-trash-2026-04-25"
     dedupe_trash.mkdir()
-    (dedupe_trash / "duplicate.md").write_text("# Duplicate\n\nOld duplicate note.", encoding="utf-8")
+    (dedupe_trash / "duplicate.md").write_text(
+        "# Duplicate\n\nOld duplicate note.", encoding="utf-8"
+    )
 
     scanner = VaultScanner(cfg)
     notes = scanner.scan()
@@ -209,3 +211,54 @@ def test_scanned_note_extracts_tags_from_yaml_list(cfg: VaultConfig, tmp_vault: 
     note = next(n for n in notes if "yaml-tags" in str(n.path))
     assert "alpha" in note.tags
     assert "beta" in note.tags
+
+
+# ---------------------------------------------------------------------------
+# 14. frontmatter scalars
+# ---------------------------------------------------------------------------
+
+
+def test_scanned_note_exposes_frontmatter_scalars(cfg: VaultConfig, tmp_vault: Path) -> None:
+    """Top-level scalars are exposed; lists and nested blocks are skipped."""
+    (tmp_vault / "fm-note.md").write_text(
+        "---\n"
+        'status: "active"\n'
+        "quality_tier: HIGH\n"
+        "tags: [a, b]\n"
+        "nested:\n"
+        "  key: value\n"
+        "---\n\n# FM\n\nContent.\n",
+        encoding="utf-8",
+    )
+    scanner = VaultScanner(cfg)
+    note = next(n for n in scanner.scan() if "fm-note" in str(n.path))
+
+    assert note.frontmatter["status"] == "active"  # quotes stripped
+    assert note.frontmatter["quality_tier"] == "HIGH"
+    assert "tags" not in note.frontmatter  # inline list, not a scalar
+    assert "nested" not in note.frontmatter  # block header has no scalar value
+    assert "key" not in note.frontmatter  # indented child is not top level
+
+
+def test_inline_tags_ignore_code_fences(cfg: VaultConfig, tmp_vault: Path) -> None:
+    """Hex colours and sample hashtags inside fences are not vault tags."""
+    (tmp_vault / "fenced.md").write_text(
+        "# Fenced\n\nSee #realtag here.\n\n"
+        "```css\n.a { color: #f8f9fa; }\n```\n\n"
+        "```\n설명: #lofi #playlist\n```\n",
+        encoding="utf-8",
+    )
+    scanner = VaultScanner(cfg)
+    note = next(n for n in scanner.scan() if "fenced" in str(n.path))
+
+    assert "realtag" in note.tags
+    assert "f8f9fa" not in note.tags
+    assert "lofi" not in note.tags
+    assert "playlist" not in note.tags
+
+
+def test_frontmatter_is_empty_without_a_block(cfg: VaultConfig, tmp_vault: Path) -> None:
+    (tmp_vault / "no-fm.md").write_text("# Plain\n\nNo frontmatter.\n", encoding="utf-8")
+    scanner = VaultScanner(cfg)
+    note = next(n for n in scanner.scan() if "no-fm" in str(n.path))
+    assert note.frontmatter == {}

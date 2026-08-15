@@ -555,3 +555,52 @@ def test_ask_save_flag_help(runner: CliRunner) -> None:
     result = runner.invoke(cli, ["ask", "--help"])
     assert result.exit_code == 0
     assert "--save" in result.output
+
+
+# ---------------------------------------------------------------------------
+# 25. health --strict regression gate
+# ---------------------------------------------------------------------------
+
+
+def _linked_pair(vault: Path) -> None:
+    """Two tagged, mutually reachable notes: a clean starting vault."""
+    (vault / "a.md").write_text("---\ntags: [x]\n---\n\n# A\n\n[[B]]\n", encoding="utf-8")
+    (vault / "B.md").write_text("---\ntags: [x]\n---\n\n# B\n\n[[A]]\n", encoding="utf-8")
+
+
+def test_health_strict_without_baseline_exits_2(runner: CliRunner, tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _linked_pair(vault)
+
+    with patch("vault_rag.cli._get_config", return_value=VaultConfig(vault_path=vault)):
+        result = runner.invoke(cli, ["health", "--strict"])
+
+    assert result.exit_code == 2
+    assert "save-baseline" in result.output
+
+
+def test_health_strict_blocks_regression(runner: CliRunner, tmp_path: Path) -> None:
+    """A cleanup only sticks if a later slide back fails the gate."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _linked_pair(vault)
+    config = VaultConfig(vault_path=vault)
+
+    with patch("vault_rag.cli._get_config", return_value=config):
+        saved = runner.invoke(cli, ["health", "--save-baseline"])
+        assert saved.exit_code == 0, saved.output
+
+        unchanged = runner.invoke(cli, ["health", "--strict"])
+        assert unchanged.exit_code == 0, unchanged.output
+        assert "No regression" in unchanged.output
+
+        # Regress: a note whose status sits outside the controlled vocabulary.
+        (vault / "c.md").write_text(
+            "---\ntags: [x]\nstatus: 완료\n---\n\n# C\n\n[[A]]\n", encoding="utf-8"
+        )
+        regressed = runner.invoke(cli, ["health", "--strict"])
+
+    assert regressed.exit_code == 1
+    assert "REGRESSION" in regressed.output
+    assert "vocabulary_violation_count" in regressed.output

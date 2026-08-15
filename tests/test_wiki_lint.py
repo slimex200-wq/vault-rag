@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -112,3 +113,59 @@ def test_lint_empty_notes() -> None:
     result = linter.lint([])
 
     assert result.total_issues == 0
+
+
+# ---------------------------------------------------------------------------
+# Rotating audit window
+# ---------------------------------------------------------------------------
+
+
+def _titles_in_last_prompt(client: MagicMock) -> list[str]:
+    """Titles the linter actually sent to the model on its most recent call."""
+    prompt = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    return re.findall(r"^\[(.+?)\]$", prompt, re.M)
+
+
+def test_lint_window_rotates_and_wraps() -> None:
+    client = _mock_anthropic("{}")
+    linter = WikiLinter(client=client, model="test")
+    notes = [_make_note(f"N{i}") for i in range(5)]
+
+    first = linter.lint(notes, max_pages=2, offset=0)
+    assert _titles_in_last_prompt(client) == ["N0", "N1"]
+    assert first.pages_examined == 2
+    assert first.next_offset == 2
+
+    second = linter.lint(notes, max_pages=2, offset=first.next_offset)
+    assert _titles_in_last_prompt(client) == ["N2", "N3"]
+    assert second.next_offset == 4
+
+    third = linter.lint(notes, max_pages=2, offset=second.next_offset)
+    assert _titles_in_last_prompt(client) == ["N4", "N0"]  # wraps past the end
+    assert third.next_offset == 1
+
+
+def test_lint_rotation_sweeps_every_page() -> None:
+    """Repeated runs must cover the whole vault, not re-read the head slice."""
+    client = _mock_anthropic("{}")
+    linter = WikiLinter(client=client, model="test")
+    notes = [_make_note(f"N{i}") for i in range(7)]
+
+    seen: set[str] = set()
+    offset = 0
+    for _ in range(4):  # ceil(7 / 2) passes at max_pages=2
+        result = linter.lint(notes, max_pages=2, offset=offset)
+        seen.update(_titles_in_last_prompt(client))
+        offset = result.next_offset
+
+    assert seen == {f"N{i}" for i in range(7)}
+
+
+def test_lint_window_never_exceeds_pool() -> None:
+    client = _mock_anthropic("{}")
+    linter = WikiLinter(client=client, model="test")
+
+    result = linter.lint([_make_note("Only")], max_pages=50, offset=0)
+
+    assert result.pages_examined == 1
+    assert result.next_offset == 0
