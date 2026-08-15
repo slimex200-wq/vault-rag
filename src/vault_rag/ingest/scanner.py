@@ -14,7 +14,10 @@ from vault_rag.config import VaultConfig
 # ---------------------------------------------------------------------------
 
 _RE_FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-_RE_YAML_TAGS = re.compile(r"tags:\s*\[([^\]]*)\]")
+# `[^\]\n]*` deliberately excludes newlines. With a bare `[^\]]*` an unclosed
+# `tags: [` swallows every following line until some later `]`, turning a whole
+# `summary:` sentence into a single tag (237 such tags on a live vault).
+_RE_YAML_TAGS = re.compile(r"tags:\s*\[([^\]\n]*)\]")
 _RE_INLINE_TAGS = re.compile(r"(?:^|\s)#([a-zA-Z가-힣][\w가-힣-]*)", re.MULTILINE)
 _RE_WIKILINKS = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 _RE_H1 = re.compile(r"^#\s+(.+)$", re.MULTILINE)
@@ -117,7 +120,11 @@ class VaultScanner:
     # ------------------------------------------------------------------
 
     def _is_excluded(self, path: Path) -> bool:
-        """Return True if any component of *path* is configured as excluded."""
+        """Return True if *path* is in an excluded dir or is a root-level journal."""
+        relative = path.relative_to(self._config.vault_path)
+        if len(relative.parts) == 1 and relative.name in self._config.excluded_root_files:
+            return True
+
         excluded = set(self._config.excluded_dirs)
         excluded_prefixes = self._config.excluded_dir_prefixes
         return any(
@@ -143,7 +150,16 @@ class VaultScanner:
         if frontmatter:
             yt_match = _RE_YAML_TAGS.search(frontmatter)
             if yt_match:
-                fm_tags = [t.strip() for t in yt_match.group(1).split(",") if t.strip()]
+                # Strip YAML quoting: `tags: ["ocr", "RLS"]` must yield ocr, not
+                # "ocr". Leaving the quotes on forks every quoted tag into its own
+                # term and inflates the tag space with phantom singletons.
+                fm_tags = [
+                    stripped
+                    for stripped in (
+                        t.strip().strip("\"'").strip() for t in yt_match.group(1).split(",")
+                    )
+                    if stripped
+                ]
             else:
                 # Try YAML list format: tags:\n  - tag1\n  - tag2
                 yaml_list_blocks = re.findall(r"tags:\s*\n((?:\s+-\s+.+\n?)+)", frontmatter)

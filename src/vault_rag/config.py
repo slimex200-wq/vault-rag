@@ -30,6 +30,12 @@ class VaultConfig:
     excluded_dir_prefixes: tuple[str, ...] = (
         ".dedupe-trash-",
     )
+    # Raw source layer: indexed and searchable, but never rewritten. Mixing
+    # LLM output into imported originals destroys the point of having them.
+    readonly_dirs: tuple[str, ...] = ("Sources",)
+    # Operational journals written by the tool itself. Indexing them would let
+    # a maintenance pass move the very metrics it is judged by.
+    excluded_root_files: tuple[str, ...] = ("log.md",)
     priority_dirs: tuple[str, ...] = (
         "Projects",
         "Knowledge",

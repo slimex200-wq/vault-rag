@@ -61,6 +61,12 @@ _GATED_METRICS = (
 )
 
 
+def _is_readonly(relative_path: str, config: VaultConfig) -> bool:
+    """True when a note lives in the immutable raw-source layer."""
+    head = relative_path.replace("\\", "/").split("/", 1)[0]
+    return head in config.readonly_dirs
+
+
 def _health_baseline_path(config: VaultConfig) -> Path:
     return Path(config.chroma_path).parent / "health-baseline.json"
 
@@ -250,8 +256,20 @@ def health_cmd(strict: bool, save_baseline: bool) -> None:
     current = {name: int(report[name]) for name in _GATED_METRICS}
 
     if save_baseline:
+        from vault_rag.engine.wiki_log import WikiLog
+
+        previous = _read_health_baseline(config)
         saved_to = _write_health_baseline(config, current)
         click.echo(f"\nBaseline saved: {saved_to}")
+        WikiLog(config.vault_path).log_maintenance(
+            "baseline",
+            "health baseline updated",
+            {
+                "previous": previous or "(none)",
+                "current": current,
+                "total_notes": report["total_notes"],
+            },
+        )
 
     if strict:
         baseline = _read_health_baseline(config)
@@ -269,6 +287,59 @@ def health_cmd(strict: bool, save_baseline: bool) -> None:
                 click.echo(f"  {name}: {was} -> {now}  (+{now - was})")
             raise SystemExit(1)
         click.echo("\nNo regression against baseline.")
+
+
+def _fusion_search(query: str, num: int, config: VaultConfig) -> None:
+    """BM25 + vector + graph, fused by reciprocal rank.
+
+    The vector leg is best-effort: an empty store or a missing API key drops
+    that ranking and the other two still answer, so search never hard-fails
+    offline.
+    """
+    from vault_rag.engine import hybrid as hybrid_engine
+    from vault_rag.ingest.scanner import VaultScanner
+
+    notes = VaultScanner(config).scan()
+    by_path = {note.relative_path: note for note in notes}
+
+    bm25_ranked = [path for path, _ in hybrid_engine.BM25Index(notes).search(query, limit=num * 4)]
+    rankings: dict[str, list[str]] = {"bm25": bm25_ranked}
+
+    try:
+        from vault_rag.engine.indexer import create_openai_embed_fn
+        from vault_rag.store.vector_store import VectorStore
+
+        store = VectorStore(persist_dir=config.chroma_path)
+        if store.count() > 0:
+            embed_fn = create_openai_embed_fn(
+                model=config.embedding_model,
+                dimensions=config.embedding_dimensions,
+            )
+            raw = store.query(query_embeddings=embed_fn([query]), n_results=num * 4)
+            rankings["vector"] = [
+                meta.get("relative_path", "") for meta in raw["metadatas"][0] if meta
+            ]
+    except Exception as exc:  # noqa: BLE001 - degraded search beats no search
+        click.echo(f"(vector leg unavailable: {type(exc).__name__}; using bm25 + graph)")
+
+    seeds = bm25_ranked[:5] + rankings.get("vector", [])[:5]
+    graph_ranked = hybrid_engine.graph_expand(seeds, notes, limit=num * 2)
+
+    fused = hybrid_engine.fuse_with_graph_recall(rankings, graph_ranked, limit=num)
+    rankings["graph"] = graph_ranked
+    if not fused:
+        click.echo("No results found.")
+        return
+
+    click.echo(f"Fusion search for: {query!r}")
+    click.echo(f"  legs: {', '.join(f'{k}({len(v)})' for k, v in rankings.items())}\n")
+    for i, item in enumerate(fused, 1):
+        note = by_path.get(item.path)
+        title = note.title if note else item.path
+        click.echo(f"[{i}] {title}")
+        click.echo(f"     path : {item.path}")
+        click.echo(f"     score: {item.score:.4f}  via {'+'.join(item.sources)}")
+        click.echo("")
 
 
 # ---------------------------------------------------------------------------
@@ -322,8 +393,20 @@ def link_orphans_cmd(apply_changes: bool) -> None:
         click.echo("\nDry run. Re-run with --apply to write.")
         return
 
+    from vault_rag.engine.wiki_log import WikiLog
+
     written = orphan_linker.apply_links(config.vault_path, links)
     click.echo(f"\nUpdated {len(written)} INDEX files.")
+    if written:
+        WikiLog(config.vault_path).log_maintenance(
+            "repair",
+            "orphan notes linked from their nearest INDEX",
+            {
+                "orphans_linked": len(links),
+                "index_files_updated": len(written),
+                "left_unplaceable": len(unplaceable),
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -334,13 +417,24 @@ def link_orphans_cmd(apply_changes: bool) -> None:
 @cli.command("search")
 @click.argument("query")
 @click.option("-n", "--num", default=5, show_default=True, help="Number of results")
-@click.option("--hybrid", is_flag=True, default=False, help="Hybrid search (vector + keyword)")
+@click.option("--hybrid", is_flag=True, default=False, help="Vector search filtered by keyword")
+@click.option(
+    "--fusion",
+    is_flag=True,
+    default=False,
+    help="BM25 + vector + graph, fused by reciprocal rank (works without embeddings)",
+)
 @click.option("--filter-tag", multiple=True, help="Filter by tag(s)")
 @click.option(
     "--extract", "do_extract", is_flag=True, default=False, help="Extract key content (LLM)"
 )
 def search_cmd(
-    query: str, num: int, hybrid: bool, filter_tag: tuple[str, ...], do_extract: bool
+    query: str,
+    num: int,
+    hybrid: bool,
+    fusion: bool,
+    filter_tag: tuple[str, ...],
+    do_extract: bool,
 ) -> None:
     """Semantic search via VectorStore + embeddings."""
     from vault_rag.engine.indexer import create_openai_embed_fn
@@ -348,6 +442,11 @@ def search_cmd(
     from vault_rag.store.vector_store import VectorStore
 
     config = _get_config()
+
+    if fusion:
+        _fusion_search(query, num, config)
+        return
+
     store = VectorStore(persist_dir=config.chroma_path)
 
     if store.count() == 0:
@@ -586,6 +685,15 @@ def compile_cmd(path: Path, dry_run: bool) -> None:
         click.echo(f"Note not found in vault: {path}", err=True)
         raise SystemExit(1)
 
+    if not dry_run and _is_readonly(note.relative_path, config):
+        click.echo(
+            f"Refusing to write: {note.relative_path} is in the raw source layer "
+            f"({', '.join(config.readonly_dirs)}). Compile it with --dry-run and "
+            f"file the result as a new wiki note instead.",
+            err=True,
+        )
+        raise SystemExit(1)
+
     client = Anthropic()
     compiler = Compiler(client=client, model=config.compile_model)
 
@@ -682,6 +790,10 @@ def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int, orphans_
     config = _get_config()
     scanner = VaultScanner(config)
     notes = scanner.scan()
+    # relink writes a `## Related` section into note bodies, so the raw source
+    # layer is off limits.
+    notes = [note for note in notes if not _is_readonly(note.relative_path, config)]
+
     if orphans_only:
         # isolated_notes(), not orphan_notes(): this flag targets notes with no
         # links at all, which is what a `## Related` section can actually fix.

@@ -58,6 +58,15 @@ class WikiLog:
         detail = f"- Issues found: {issues_found}\n" if issues_found else ""
         self._append("lint", "health check", detail)
 
+    def log_maintenance(self, operation: str, title: str, details: dict[str, object]) -> None:
+        """Log a structural maintenance pass (repairs, baseline changes).
+
+        Only mutations and baseline moves belong here. A read-only health run
+        that changed nothing would bury the timeline in noise.
+        """
+        detail = "".join(f"- {k}: {v}\n" for k, v in details.items() if v not in (None, ""))
+        self._append(operation, title, detail)
+
     def log_generate(self, format: str, topic: str, output_path: str = "") -> None:
         """Log a generate operation."""
         detail = ""

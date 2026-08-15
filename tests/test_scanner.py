@@ -240,6 +240,48 @@ def test_scanned_note_exposes_frontmatter_scalars(cfg: VaultConfig, tmp_vault: P
     assert "key" not in note.frontmatter  # indented child is not top level
 
 
+def test_unclosed_tag_bracket_does_not_swallow_later_lines(
+    cfg: VaultConfig, tmp_vault: Path
+) -> None:
+    """An unclosed `tags: [` must not turn the summary sentence into a tag."""
+    (tmp_vault / "unclosed.md").write_text(
+        "---\n"
+        "tags: [alpha, beta\n"
+        "summary: 'a sentence with a bracket ] inside it'\n"
+        "---\n\n# Unclosed\n\nBody.\n",
+        encoding="utf-8",
+    )
+    note = next(n for n in VaultScanner(cfg).scan() if "unclosed" in str(n.path))
+
+    assert not any("summary" in t for t in note.tags)
+    assert not any(len(t) > 40 for t in note.tags)
+
+
+def test_quoted_inline_tags_are_unquoted(cfg: VaultConfig, tmp_vault: Path) -> None:
+    """`tags: ["ocr", 'RLS']` yields ocr and RLS, not '"ocr"' and "'RLS'"."""
+    (tmp_vault / "quoted-tags.md").write_text(
+        "---\ntags: [\"ocr\", 'RLS', plain]\n---\n\n# Quoted\n\nBody.\n",
+        encoding="utf-8",
+    )
+    note = next(n for n in VaultScanner(cfg).scan() if "quoted-tags" in str(n.path))
+
+    assert note.tags == ["ocr", "RLS", "plain"]
+
+
+def test_root_operational_journal_is_not_a_note(cfg: VaultConfig, tmp_vault: Path) -> None:
+    """log.md is the tool's own journal; indexing it lets maintenance move its metrics."""
+    (tmp_vault / "log.md").write_text(
+        "---\ntags: [system, log]\n---\n# Wiki Log\n", encoding="utf-8"
+    )
+    (tmp_vault / "Dev").mkdir(exist_ok=True)
+    (tmp_vault / "Dev" / "log.md").write_text("# A real note named log\n", encoding="utf-8")
+
+    paths = {n.relative_path for n in VaultScanner(cfg).scan()}
+
+    assert "log.md" not in paths
+    assert "Dev/log.md" in paths  # only the root-level journal is exempt
+
+
 def test_inline_tags_ignore_code_fences(cfg: VaultConfig, tmp_vault: Path) -> None:
     """Hex colours and sample hashtags inside fences are not vault tags."""
     (tmp_vault / "fenced.md").write_text(
