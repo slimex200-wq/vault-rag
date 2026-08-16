@@ -114,12 +114,11 @@ def cli() -> None:
 
 def _auto_compile_and_index(note_path: Path, config: VaultConfig) -> None:
     """Compile and embed a single note. Prints results to stdout."""
-    from anthropic import Anthropic
-
     from vault_rag.engine.compiler import Compiler
-    from vault_rag.engine.indexer import Indexer, create_openai_embed_fn
+    from vault_rag.engine.indexer import Indexer, create_embed_fn
     from vault_rag.engine.qa import QAEngine
     from vault_rag.ingest.scanner import VaultScanner
+    from vault_rag.llm_client import make_anthropic_client
     from vault_rag.store.vector_store import VectorStore
 
     scanner = VaultScanner(config)
@@ -135,7 +134,7 @@ def _auto_compile_and_index(note_path: Path, config: VaultConfig) -> None:
 
     # Dedup check before compiling
     vs = VectorStore(persist_dir=config.chroma_path)
-    embed_fn = create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
+    embed_fn = create_embed_fn(config)
     if vs.count() > 0:
         qa = QAEngine(vector_store=vs, embed_fn=embed_fn, client=None, model="")
         note_content_text = target.title + " " + target.content
@@ -146,7 +145,7 @@ def _auto_compile_and_index(note_path: Path, config: VaultConfig) -> None:
                 click.echo(f"    [{d['distance']:.3f}] {d['metadata'].get('title', d['id'])}")
 
     known = {n.title.lower() for n in notes} | {Path(n.relative_path).stem.lower() for n in notes}
-    client = Anthropic()
+    client = make_anthropic_client()
     compiler = Compiler(client=client, model=config.compile_model)
     result = compiler.compile_and_write(target, known_titles=known)
     click.echo(f"  Summary: {result.summary}")
@@ -306,15 +305,12 @@ def _fusion_search(query: str, num: int, config: VaultConfig) -> None:
     rankings: dict[str, list[str]] = {"bm25": bm25_ranked}
 
     try:
-        from vault_rag.engine.indexer import create_openai_embed_fn
+        from vault_rag.engine.indexer import create_embed_fn
         from vault_rag.store.vector_store import VectorStore
 
         store = VectorStore(persist_dir=config.chroma_path)
         if store.count() > 0:
-            embed_fn = create_openai_embed_fn(
-                model=config.embedding_model,
-                dimensions=config.embedding_dimensions,
-            )
+            embed_fn = create_embed_fn(config)
             raw = store.query(query_embeddings=embed_fn([query]), n_results=num * 4)
             rankings["vector"] = [
                 meta.get("relative_path", "") for meta in raw["metadatas"][0] if meta
@@ -437,7 +433,7 @@ def search_cmd(
     do_extract: bool,
 ) -> None:
     """Semantic search via VectorStore + embeddings."""
-    from vault_rag.engine.indexer import create_openai_embed_fn
+    from vault_rag.engine.indexer import create_embed_fn
     from vault_rag.engine.qa import QAEngine
     from vault_rag.store.vector_store import VectorStore
 
@@ -453,16 +449,13 @@ def search_cmd(
         click.echo("Vector store is empty. Run `vault-rag index` first.")
         return
 
-    embed_fn = create_openai_embed_fn(
-        model=config.embedding_model,
-        dimensions=config.embedding_dimensions,
-    )
+    embed_fn = create_embed_fn(config)
 
     client = None
     if do_extract:
-        from anthropic import Anthropic
+        from vault_rag.llm_client import make_anthropic_client
 
-        client = Anthropic()
+        client = make_anthropic_client()
 
     engine = QAEngine(
         vector_store=store,
@@ -513,7 +506,7 @@ def search_cmd(
 @click.option("--full", is_flag=True, default=False, help="Full reindex (clear + rebuild)")
 def index_cmd(full: bool) -> None:
     """Build or update the embedding index."""
-    from vault_rag.engine.indexer import Indexer, create_openai_embed_fn
+    from vault_rag.engine.indexer import Indexer, create_embed_fn
     from vault_rag.ingest.scanner import VaultScanner
     from vault_rag.store.vector_store import VectorStore
 
@@ -526,10 +519,7 @@ def index_cmd(full: bool) -> None:
 
     notes = scanner.scan()
 
-    embed_fn = create_openai_embed_fn(
-        model=config.embedding_model,
-        dimensions=config.embedding_dimensions,
-    )
+    embed_fn = create_embed_fn(config)
     indexer = Indexer(config=config, vector_store=store, embed_fn=embed_fn)
 
     if full:
@@ -551,11 +541,10 @@ def index_cmd(full: bool) -> None:
 @click.option("--save", is_flag=True, default=False, help="Save answer as a wiki page")
 def ask_cmd(question: str, follow_up: bool, save: bool) -> None:
     """Query the wiki, synthesize an answer, optionally save as a page."""
-    from anthropic import Anthropic
-
-    from vault_rag.engine.indexer import create_openai_embed_fn
+    from vault_rag.engine.indexer import create_embed_fn
     from vault_rag.engine.qa import QAEngine
     from vault_rag.engine.wiki_log import WikiLog
+    from vault_rag.llm_client import make_anthropic_client
     from vault_rag.store.vector_store import VectorStore
 
     config = _get_config()
@@ -565,11 +554,8 @@ def ask_cmd(question: str, follow_up: bool, save: bool) -> None:
         click.echo("Vector store is empty. Run `vault-rag index` first.")
         return
 
-    embed_fn = create_openai_embed_fn(
-        model=config.embedding_model,
-        dimensions=config.embedding_dimensions,
-    )
-    client = Anthropic()
+    embed_fn = create_embed_fn(config)
+    client = make_anthropic_client()
     engine = QAEngine(
         vector_store=store,
         embed_fn=embed_fn,
@@ -666,10 +652,9 @@ def ingest_pdf_cmd(pdf_path: Path, folder: str, no_compile: bool) -> None:
 @click.option("--dry-run", is_flag=True, default=False, help="Show results without writing to file")
 def compile_cmd(path: Path, dry_run: bool) -> None:
     """Compile a single note: auto-summarize, tag, and suggest links."""
-    from anthropic import Anthropic
-
     from vault_rag.engine.compiler import Compiler
     from vault_rag.ingest.scanner import VaultScanner
+    from vault_rag.llm_client import make_anthropic_client
 
     config = _get_config()
     scanner = VaultScanner(config)
@@ -694,7 +679,7 @@ def compile_cmd(path: Path, dry_run: bool) -> None:
         )
         raise SystemExit(1)
 
-    client = Anthropic()
+    client = make_anthropic_client()
     compiler = Compiler(client=client, model=config.compile_model)
 
     if dry_run:
@@ -741,11 +726,10 @@ def compile_new_cmd(dry_run: bool) -> None:
             click.echo(f"  {n.relative_path}")
         return
 
-    from anthropic import Anthropic
-
     from vault_rag.engine.compiler import Compiler
+    from vault_rag.llm_client import make_anthropic_client
 
-    client = Anthropic()
+    client = make_anthropic_client()
     compiler = Compiler(client=client, model=config.compile_model)
     known = {n.title.lower() for n in notes} | {Path(n.relative_path).stem.lower() for n in notes}
 
@@ -783,7 +767,7 @@ def compile_new_cmd(dry_run: bool) -> None:
 def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int, orphans_only: bool) -> None:
     """Add `## Related` section via semantic similarity (no LLM)."""
     from vault_rag.engine.health import HealthChecker
-    from vault_rag.engine.indexer import create_openai_embed_fn
+    from vault_rag.engine.indexer import create_embed_fn
     from vault_rag.ingest.scanner import VaultScanner
     from vault_rag.store.vector_store import VectorStore
 
@@ -808,10 +792,7 @@ def relink_cmd(top_k: int, threshold: float, dry_run: bool, limit: int, orphans_
         click.echo("Vector store is empty. Run `vault-rag index --full` first.")
         return
 
-    embed_fn = create_openai_embed_fn(
-        model=config.embedding_model,
-        dimensions=config.embedding_dimensions,
-    )
+    embed_fn = create_embed_fn(config)
 
     # Batch-embed note texts (same format as Indexer._note_to_text).
     def note_to_text(n):
@@ -976,10 +957,9 @@ def generate_group() -> None:
 @click.option("-n", "--num", default=10, show_default=True, help="Number of context notes")
 def generate_slides_cmd(topic: str, num: int) -> None:
     """Generate a markdown slide deck on a topic."""
-    from anthropic import Anthropic
-
     from vault_rag.engine.generator import Generator
-    from vault_rag.engine.indexer import create_openai_embed_fn
+    from vault_rag.engine.indexer import create_embed_fn
+    from vault_rag.llm_client import make_anthropic_client
     from vault_rag.store.vector_store import VectorStore
 
     config = _get_config()
@@ -989,8 +969,8 @@ def generate_slides_cmd(topic: str, num: int) -> None:
         click.echo("Vector store is empty. Run `vault-rag index` first.")
         return
 
-    embed_fn = create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
-    client = Anthropic()
+    embed_fn = create_embed_fn(config)
+    client = make_anthropic_client()
     gen = Generator(client=client, model=config.qa_model, embed_fn=embed_fn, vector_store=store)
     result = gen.generate_slides(topic, n_context=num)
     path = gen.save(result, config.output_path)
@@ -1003,10 +983,9 @@ def generate_slides_cmd(topic: str, num: int) -> None:
 @click.option("-n", "--num", default=10, show_default=True, help="Number of context notes")
 def generate_report_cmd(topic: str, num: int) -> None:
     """Generate a comprehensive report on a topic."""
-    from anthropic import Anthropic
-
     from vault_rag.engine.generator import Generator
-    from vault_rag.engine.indexer import create_openai_embed_fn
+    from vault_rag.engine.indexer import create_embed_fn
+    from vault_rag.llm_client import make_anthropic_client
     from vault_rag.store.vector_store import VectorStore
 
     config = _get_config()
@@ -1016,8 +995,8 @@ def generate_report_cmd(topic: str, num: int) -> None:
         click.echo("Vector store is empty. Run `vault-rag index` first.")
         return
 
-    embed_fn = create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
-    client = Anthropic()
+    embed_fn = create_embed_fn(config)
+    client = make_anthropic_client()
     gen = Generator(client=client, model=config.qa_model, embed_fn=embed_fn, vector_store=store)
     result = gen.generate_report(topic, n_context=num)
     path = gen.save(result, config.output_path)
@@ -1030,10 +1009,9 @@ def generate_report_cmd(topic: str, num: int) -> None:
 @click.option("-n", "--num", default=5, show_default=True, help="Number of context notes")
 def generate_summary_cmd(topic: str, num: int) -> None:
     """Generate a concise executive briefing on a topic."""
-    from anthropic import Anthropic
-
     from vault_rag.engine.generator import Generator
-    from vault_rag.engine.indexer import create_openai_embed_fn
+    from vault_rag.engine.indexer import create_embed_fn
+    from vault_rag.llm_client import make_anthropic_client
     from vault_rag.store.vector_store import VectorStore
 
     config = _get_config()
@@ -1043,8 +1021,8 @@ def generate_summary_cmd(topic: str, num: int) -> None:
         click.echo("Vector store is empty. Run `vault-rag index` first.")
         return
 
-    embed_fn = create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
-    client = Anthropic()
+    embed_fn = create_embed_fn(config)
+    client = make_anthropic_client()
     gen = Generator(client=client, model=config.qa_model, embed_fn=embed_fn, vector_store=store)
     result = gen.generate_summary(topic, n_context=num)
     path = gen.save(result, config.output_path)
@@ -1057,10 +1035,9 @@ def generate_summary_cmd(topic: str, num: int) -> None:
 @click.option("-n", "--num", default=10, show_default=True, help="Number of context notes")
 def generate_chart_cmd(topic: str, num: int) -> None:
     """Generate a Mermaid chart/diagram on a topic."""
-    from anthropic import Anthropic
-
     from vault_rag.engine.generator import Generator
-    from vault_rag.engine.indexer import create_openai_embed_fn
+    from vault_rag.engine.indexer import create_embed_fn
+    from vault_rag.llm_client import make_anthropic_client
     from vault_rag.store.vector_store import VectorStore
 
     config = _get_config()
@@ -1070,8 +1047,8 @@ def generate_chart_cmd(topic: str, num: int) -> None:
         click.echo("Vector store is empty. Run `vault-rag index` first.")
         return
 
-    embed_fn = create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
-    client = Anthropic()
+    embed_fn = create_embed_fn(config)
+    client = make_anthropic_client()
     gen = Generator(client=client, model=config.qa_model, embed_fn=embed_fn, vector_store=store)
     result = gen.generate_chart(topic, n_context=num)
     path = gen.save(result, config.output_path)
@@ -1090,12 +1067,11 @@ def generate_chart_cmd(topic: str, num: int) -> None:
 @click.option("--no-index", is_flag=True, default=False, help="Skip auto-index after saving")
 def ingest_image_cmd(image_path: Path, folder: str, no_index: bool) -> None:
     """Analyze an image with Claude Vision and save as a descriptive note."""
-    from anthropic import Anthropic
-
     from vault_rag.ingest.image_analyzer import ImageAnalyzer
+    from vault_rag.llm_client import make_anthropic_client
 
     config = _get_config()
-    client = Anthropic()
+    client = make_anthropic_client()
     analyzer = ImageAnalyzer(
         client=client, model=config.compile_model, vault_path=config.vault_path
     )
@@ -1109,12 +1085,12 @@ def ingest_image_cmd(image_path: Path, folder: str, no_index: bool) -> None:
     click.echo(f"  Note: {note_path.relative_to(config.vault_path)}")
 
     if not no_index:
-        from vault_rag.engine.indexer import Indexer, create_openai_embed_fn
+        from vault_rag.engine.indexer import Indexer, create_embed_fn
         from vault_rag.ingest.scanner import VaultScanner
         from vault_rag.store.vector_store import VectorStore
 
         vs = VectorStore(persist_dir=config.chroma_path)
-        embed_fn = create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
+        embed_fn = create_embed_fn(config)
         scanner = VaultScanner(config)
         notes = scanner.scan()
         target = next((n for n in notes if n.path.resolve() == note_path.resolve()), None)
@@ -1152,12 +1128,11 @@ def reindex_cmd() -> None:
 @cli.command("lint")
 def lint_cmd() -> None:
     """LLM-powered wiki health check - contradictions, stale claims, data gaps."""
-    from anthropic import Anthropic
-
     from vault_rag.engine.health import HealthChecker
     from vault_rag.engine.wiki_lint import WikiLinter
     from vault_rag.engine.wiki_log import WikiLog
     from vault_rag.ingest.scanner import VaultScanner
+    from vault_rag.llm_client import make_anthropic_client
 
     config = _get_config()
     scanner = VaultScanner(config)
@@ -1177,7 +1152,7 @@ def lint_cmd() -> None:
     # whole vault instead of re-auditing the same head slice every time.
     offset = _read_lint_cursor(config)
     click.echo("\nRunning LLM analysis...")
-    client = Anthropic()
+    client = make_anthropic_client()
     linter = WikiLinter(client=client, model=config.compile_model)
     result = linter.lint(notes, health_report=health, offset=offset)
     _write_lint_cursor(config, result.next_offset)

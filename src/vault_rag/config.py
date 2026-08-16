@@ -13,10 +13,15 @@ class VaultConfig:
     vault_path: Path = field(
         default_factory=lambda: Path("C:/Users/slime/claude-projects/Obsidian Vault")
     )
+    # "local" runs all-MiniLM-L6-v2 through the onnxruntime that chromadb
+    # already ships, so re-indexing the whole vault costs nothing. "openai"
+    # keeps text-embedding-3-small, which is better but metered -- no chat
+    # subscription covers the embeddings endpoint.
+    embedding_provider: str = "local"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 512
     compile_model: str = "claude-haiku-4-5-20251001"
-    qa_model: str = "claude-sonnet-4-20250514"
+    qa_model: str = "claude-sonnet-4-6"
     max_context_tokens: int = 4000
     chunk_size: int = 500
     chunk_overlap: int = 50
@@ -27,9 +32,7 @@ class VaultConfig:
         "docs",
         "Templates",
     )
-    excluded_dir_prefixes: tuple[str, ...] = (
-        ".dedupe-trash-",
-    )
+    excluded_dir_prefixes: tuple[str, ...] = (".dedupe-trash-",)
     # Raw source layer: indexed and searchable, but never rewritten. Mixing
     # LLM output into imported originals destroys the point of having them.
     readonly_dirs: tuple[str, ...] = ("Sources",)

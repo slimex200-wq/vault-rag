@@ -224,7 +224,7 @@ def test_search_with_results(runner: CliRunner, tmp_path: Path) -> None:
     mock_embed_fn = MagicMock(return_value=[[0.1] * 1536])
 
     with patch("vault_rag.cli._get_config", return_value=config):
-        with patch("vault_rag.engine.indexer.create_openai_embed_fn", return_value=mock_embed_fn):
+        with patch("vault_rag.engine.indexer.create_embed_fn", return_value=mock_embed_fn):
             result = runner.invoke(cli, ["search", "test query"])
 
     assert result.exit_code == 0, result.output
@@ -243,7 +243,7 @@ def test_index_command(runner: CliRunner, tmp_path: Path) -> None:
     mock_embed_fn = MagicMock(return_value=[[0.1] * 1536])
 
     with patch("vault_rag.cli._get_config", return_value=config):
-        with patch("vault_rag.engine.indexer.create_openai_embed_fn", return_value=mock_embed_fn):
+        with patch("vault_rag.engine.indexer.create_embed_fn", return_value=mock_embed_fn):
             result = runner.invoke(cli, ["index"])
 
     assert result.exit_code == 0, result.output
@@ -349,7 +349,7 @@ def test_generate_slides_with_data(runner: CliRunner, tmp_path: Path) -> None:
     mock_msg.content = [MagicMock(text="## Slide 1\n\n- Point")]
 
     with patch("vault_rag.cli._get_config", return_value=config):
-        with patch("vault_rag.engine.indexer.create_openai_embed_fn", return_value=mock_embed):
+        with patch("vault_rag.engine.indexer.create_embed_fn", return_value=mock_embed):
             with patch("anthropic.Anthropic") as mock_anthropic:
                 mock_anthropic.return_value.messages.create.return_value = mock_msg
                 result = runner.invoke(cli, ["generate", "slides", "AI"])
@@ -378,7 +378,7 @@ def test_generate_report_with_data(runner: CliRunner, tmp_path: Path) -> None:
     mock_msg.content = [MagicMock(text="## Executive Summary\n\nReport body.")]
 
     with patch("vault_rag.cli._get_config", return_value=config):
-        with patch("vault_rag.engine.indexer.create_openai_embed_fn", return_value=mock_embed):
+        with patch("vault_rag.engine.indexer.create_embed_fn", return_value=mock_embed):
             with patch("anthropic.Anthropic") as mock_anthropic:
                 mock_anthropic.return_value.messages.create.return_value = mock_msg
                 result = runner.invoke(cli, ["generate", "report", "topic"])
@@ -407,7 +407,7 @@ def test_generate_summary_with_data(runner: CliRunner, tmp_path: Path) -> None:
     mock_msg.content = [MagicMock(text="- Key point 1\n- Key point 2")]
 
     with patch("vault_rag.cli._get_config", return_value=config):
-        with patch("vault_rag.engine.indexer.create_openai_embed_fn", return_value=mock_embed):
+        with patch("vault_rag.engine.indexer.create_embed_fn", return_value=mock_embed):
             with patch("anthropic.Anthropic") as mock_anthropic:
                 mock_anthropic.return_value.messages.create.return_value = mock_msg
                 result = runner.invoke(cli, ["generate", "summary", "topic"])

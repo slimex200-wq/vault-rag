@@ -105,7 +105,7 @@ def test_cli_index_and_search(tmp_vault: Path, cfg: VaultConfig, tmp_path: Path)
 
     with (
         patch("vault_rag.cli._get_config", return_value=cfg),
-        patch("vault_rag.engine.indexer.create_openai_embed_fn", return_value=embed_mock),
+        patch("vault_rag.engine.indexer.create_embed_fn", return_value=embed_mock),
         patch("vault_rag.store.vector_store.VectorStore", return_value=real_store),
     ):
         idx_result = runner.invoke(cli, ["index"])

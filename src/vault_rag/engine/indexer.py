@@ -90,7 +90,7 @@ def create_openai_embed_fn(
     model: str = "text-embedding-3-small",
     dimensions: int = 512,
 ) -> Callable[[list[str]], list[list[float]]]:
-    """OpenAI API를 사용하는 임베딩 함수를 생성한다."""
+    """OpenAI API를 사용하는 임베딩 함수를 생성한다. 종량 과금."""
     from openai import OpenAI
 
     client = OpenAI()
@@ -104,3 +104,36 @@ def create_openai_embed_fn(
         return [item.embedding for item in response.data]
 
     return embed
+
+
+def create_local_embed_fn() -> Callable[[list[str]], list[list[float]]]:
+    """온디바이스 임베딩 함수. chromadb 번들 onnxruntime 을 쓰므로 과금 없음.
+
+    임베딩 엔드포인트는 어떤 채팅 구독에도 포함되지 않아 OpenAI 를 쓰는 한
+    종량 과금을 피할 수 없다. 전체 재인덱싱을 마음껏 돌리려면 로컬이 답이다.
+    """
+    from chromadb.utils import embedding_functions
+
+    encoder = embedding_functions.DefaultEmbeddingFunction()
+
+    def embed(texts: list[str]) -> list[list[float]]:
+        # float() per element, not list(): the encoder yields numpy float32 and
+        # chroma's validator only accepts native ints/floats, rejecting the
+        # whole batch with "Expected embeddings to be a list of floats...".
+        return [[float(value) for value in vector] for vector in encoder(texts)]
+
+    return embed
+
+
+def create_embed_fn(config: VaultConfig) -> Callable[[list[str]], list[list[float]]]:
+    """설정에 따라 임베딩 백엔드를 고른다.
+
+    Raises:
+        ValueError: 알 수 없는 provider. 조용히 유료 경로로 폴백하지 않는다.
+    """
+    provider = config.embedding_provider
+    if provider == "local":
+        return create_local_embed_fn()
+    if provider == "openai":
+        return create_openai_embed_fn(config.embedding_model, config.embedding_dimensions)
+    raise ValueError(f"Unknown embedding_provider: {provider!r} (expected 'local' or 'openai')")
