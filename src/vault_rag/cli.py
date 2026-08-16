@@ -516,18 +516,35 @@ def index_cmd(full: bool) -> None:
 
     if full:
         click.echo("Full reindex: clearing existing index...")
+        notes = scanner.scan()
+        embed_fn = create_embed_fn(config)
+        indexer = Indexer(config=config, vector_store=store, embed_fn=embed_fn)
+        count = indexer.reindex(notes)
+        click.echo(f"Indexed {count} note(s). Total in store: {store.count()}")
+        return
 
+    # Incremental: embed only what changed, and drop notes deleted from disk.
+    # Passing known hashes is what makes this incremental at all -- without it
+    # every run re-embeds the whole vault.
+    # One scan: it reads and hashes every file regardless, so filtering here
+    # beats calling scan() twice with and without known_hashes.
+    known = store.content_hashes()
     notes = scanner.scan()
+    changed = [n for n in notes if known.get(n.relative_path) != n.content_hash]
+    removed = sorted(known.keys() - {n.relative_path for n in notes})
+
+    if removed:
+        store.delete(removed)
+        click.echo(f"Removed {len(removed)} deleted note(s) from the index.")
+
+    if not changed:
+        click.echo(f"Index already current. Total in store: {store.count()}")
+        return
 
     embed_fn = create_embed_fn(config)
     indexer = Indexer(config=config, vector_store=store, embed_fn=embed_fn)
-
-    if full:
-        count = indexer.reindex(notes)
-    else:
-        count = indexer.index(notes)
-
-    click.echo(f"Indexed {count} note(s). Total in store: {store.count()}")
+    count = indexer.index(changed)
+    click.echo(f"Indexed {count} changed note(s). Total in store: {store.count()}")
 
 
 # ---------------------------------------------------------------------------

@@ -75,6 +75,22 @@ class VectorStore:
         """지정 id 문서를 가져온다."""
         return self._collection.get(ids=ids)
 
+    def content_hashes(self) -> dict[str, str]:
+        """저장된 문서의 `relative_path -> content_hash` 맵.
+
+        증분 인덱싱의 기준이 된다. 이게 없으면 매 실행마다 전량 재임베딩이라
+        OpenAI 백엔드에서는 실행할 때마다 전체 비용이 다시 나간다.
+        """
+        stored = self._collection.get(include=["metadatas"])
+        result: dict[str, str] = {}
+        for doc_id, metadata in zip(stored["ids"], stored["metadatas"] or [], strict=False):
+            meta = metadata or {}
+            path = meta.get("relative_path") or doc_id
+            content_hash = meta.get("content_hash")
+            if path and content_hash:
+                result[str(path)] = str(content_hash)
+        return result
+
     def count(self) -> int:
         """컬렉션 내 문서 수를 반환한다."""
         return self._collection.count()
