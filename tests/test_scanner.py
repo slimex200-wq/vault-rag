@@ -3,7 +3,20 @@
 from pathlib import Path
 
 from vault_rag.config import VaultConfig
-from vault_rag.ingest.scanner import VaultScanner
+from vault_rag.ingest.scanner import ScannedNote, VaultScanner
+
+
+def _note(notes: list[ScannedNote], filename: str) -> ScannedNote:
+    """Pick the scanned note whose file is *filename*.
+
+    Matching a substring of the full path is not safe here. pytest names the
+    temporary directory after the test function, so a selector like
+    ``"backslash"`` also matches every note inside
+    ``.../test_scan_strips_backslash_fro0/`` and ``next()`` returns whichever
+    file the scan yielded first. That passed on Windows and failed on Linux
+    purely on directory ordering.
+    """
+    return next(n for n in notes if n.path.name == filename)
 
 # ---------------------------------------------------------------------------
 # 1. scan finds expected .md files
@@ -173,7 +186,7 @@ def test_scan_ignores_wikilinks_in_code_blocks(cfg: VaultConfig, tmp_vault: Path
     )
     scanner = VaultScanner(cfg)
     notes = scanner.scan()
-    code_note = next(n for n in notes if "code-note" in str(n.path))
+    code_note = _note(notes, "code-note.md")
     assert "real-link" in code_note.links
     assert not any("\n" in link for link in code_note.links)  # No multiline "links"
 
@@ -191,7 +204,7 @@ def test_scan_strips_backslash_from_wikilinks(cfg: VaultConfig, tmp_vault: Path)
     )
     scanner = VaultScanner(cfg)
     notes = scanner.scan()
-    bs_note = next(n for n in notes if "backslash" in str(n.path))
+    bs_note = _note(notes, "backslash-note.md")
     assert "some-target" in bs_note.links
 
 
@@ -208,7 +221,7 @@ def test_scanned_note_extracts_tags_from_yaml_list(cfg: VaultConfig, tmp_vault: 
     )
     scanner = VaultScanner(cfg)
     notes = scanner.scan()
-    note = next(n for n in notes if "yaml-tags" in str(n.path))
+    note = _note(notes, "yaml-tags.md")
     assert "alpha" in note.tags
     assert "beta" in note.tags
 
@@ -231,7 +244,7 @@ def test_scanned_note_exposes_frontmatter_scalars(cfg: VaultConfig, tmp_vault: P
         encoding="utf-8",
     )
     scanner = VaultScanner(cfg)
-    note = next(n for n in scanner.scan() if "fm-note" in str(n.path))
+    note = _note(scanner.scan(), "fm-note.md")
 
     assert note.frontmatter["status"] == "active"  # quotes stripped
     assert note.frontmatter["quality_tier"] == "HIGH"
@@ -251,7 +264,7 @@ def test_unclosed_tag_bracket_does_not_swallow_later_lines(
         "---\n\n# Unclosed\n\nBody.\n",
         encoding="utf-8",
     )
-    note = next(n for n in VaultScanner(cfg).scan() if "unclosed" in str(n.path))
+    note = _note(VaultScanner(cfg).scan(), "unclosed.md")
 
     assert not any("summary" in t for t in note.tags)
     assert not any(len(t) > 40 for t in note.tags)
@@ -263,7 +276,7 @@ def test_quoted_inline_tags_are_unquoted(cfg: VaultConfig, tmp_vault: Path) -> N
         "---\ntags: [\"ocr\", 'RLS', plain]\n---\n\n# Quoted\n\nBody.\n",
         encoding="utf-8",
     )
-    note = next(n for n in VaultScanner(cfg).scan() if "quoted-tags" in str(n.path))
+    note = _note(VaultScanner(cfg).scan(), "quoted-tags.md")
 
     assert note.tags == ["ocr", "RLS", "plain"]
 
@@ -291,7 +304,7 @@ def test_inline_tags_ignore_code_fences(cfg: VaultConfig, tmp_vault: Path) -> No
         encoding="utf-8",
     )
     scanner = VaultScanner(cfg)
-    note = next(n for n in scanner.scan() if "fenced" in str(n.path))
+    note = _note(scanner.scan(), "fenced.md")
 
     assert "realtag" in note.tags
     assert "f8f9fa" not in note.tags
@@ -302,5 +315,5 @@ def test_inline_tags_ignore_code_fences(cfg: VaultConfig, tmp_vault: Path) -> No
 def test_frontmatter_is_empty_without_a_block(cfg: VaultConfig, tmp_vault: Path) -> None:
     (tmp_vault / "no-fm.md").write_text("# Plain\n\nNo frontmatter.\n", encoding="utf-8")
     scanner = VaultScanner(cfg)
-    note = next(n for n in scanner.scan() if "no-fm" in str(n.path))
+    note = _note(scanner.scan(), "no-fm.md")
     assert note.frontmatter == {}
