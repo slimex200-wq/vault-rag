@@ -62,6 +62,8 @@ def test_apply_appends_then_rewrites_in_place(tmp_path: Path) -> None:
     index = tmp_path / "Dev" / "INDEX.md"
     index.parent.mkdir(parents=True)
     index.write_text("# Dev\n\nHand written intro.\n", encoding="utf-8")
+    (tmp_path / "Dev" / "a.md").write_text("A", encoding="utf-8")
+    (tmp_path / "Dev" / "b.md").write_text("B", encoding="utf-8")
 
     written = apply_links(tmp_path, [OrphanLink("Dev/INDEX.md", "Dev/a.md", "A")])
     assert written == ["Dev/INDEX.md"]
@@ -71,9 +73,9 @@ def test_apply_appends_then_rewrites_in_place(tmp_path: Path) -> None:
 
     apply_links(tmp_path, [OrphanLink("Dev/INDEX.md", "Dev/b.md", "B")])
     second = index.read_text(encoding="utf-8")
-    assert second.count(MARKER_START) == 1  # replaced, not appended
+    assert second.count(MARKER_START) == 1  # one block, rewritten
     assert "[[Dev/b|B]]" in second
-    assert "[[Dev/a|A]]" not in second
+    assert "[[Dev/a|A]]" in second  # kept: the block is its only inbound edge
     assert "Hand written intro." in second
 
 
@@ -81,6 +83,7 @@ def test_apply_is_idempotent(tmp_path: Path) -> None:
     index = tmp_path / "Dev" / "INDEX.md"
     index.parent.mkdir(parents=True)
     index.write_text("# Dev\n", encoding="utf-8")
+    (tmp_path / "Dev" / "a.md").write_text("A", encoding="utf-8")
     links = [OrphanLink("Dev/INDEX.md", "Dev/a.md", "A")]
 
     apply_links(tmp_path, links)
@@ -89,3 +92,43 @@ def test_apply_is_idempotent(tmp_path: Path) -> None:
 
     assert second_run == []  # nothing changed on disk
     assert index.read_text(encoding="utf-8") == snapshot
+
+
+def test_prior_entries_survive_so_repaired_orphans_do_not_regress(tmp_path: Path) -> None:
+    """The managed block *is* the inbound edge.
+
+    Dropping last run's entries un-links those notes, so the next scan reports
+    them as orphans again and the linker oscillates instead of converging.
+    Real regression: Daily/2026-07-25..08-03 went back to orphan the moment
+    08-28..30 were written into the block.
+    """
+    index = tmp_path / "Dev" / "INDEX.md"
+    index.parent.mkdir(parents=True)
+    index.write_text("# Dev\n", encoding="utf-8")
+    (tmp_path / "Dev" / "a.md").write_text("A", encoding="utf-8")
+    (tmp_path / "Dev" / "b.md").write_text("B", encoding="utf-8")
+
+    apply_links(tmp_path, [OrphanLink("Dev/INDEX.md", "Dev/a.md", "A")])
+    apply_links(tmp_path, [OrphanLink("Dev/INDEX.md", "Dev/b.md", "B")])
+
+    body = index.read_text(encoding="utf-8")
+    assert "[[Dev/a|A]]" in body
+    assert "[[Dev/b|B]]" in body
+    assert body.count(MARKER_START) == 1
+
+
+def test_entry_for_a_deleted_note_is_pruned(tmp_path: Path) -> None:
+    """Carrying a link to a note that no longer exists would be a broken link."""
+    index = tmp_path / "Dev" / "INDEX.md"
+    index.parent.mkdir(parents=True)
+    index.write_text("# Dev\n", encoding="utf-8")
+    (tmp_path / "Dev" / "gone.md").write_text("G", encoding="utf-8")
+    (tmp_path / "Dev" / "b.md").write_text("B", encoding="utf-8")
+
+    apply_links(tmp_path, [OrphanLink("Dev/INDEX.md", "Dev/gone.md", "G")])
+    (tmp_path / "Dev" / "gone.md").unlink()
+    apply_links(tmp_path, [OrphanLink("Dev/INDEX.md", "Dev/b.md", "B")])
+
+    body = index.read_text(encoding="utf-8")
+    assert "[[Dev/gone|G]]" not in body
+    assert "[[Dev/b|B]]" in body

@@ -6,8 +6,14 @@ links and leaves it just as unreachable -- that is why earlier cleanups looked
 successful and then "regressed".
 
 Each INDEX owns one managed block delimited by HTML comments. Re-running
-rewrites that block in place, so the operation is idempotent and hand-written
-sections above it are never touched.
+rewrites that block in place, so hand-written sections above it are never
+touched.
+
+The block is *merged*, never replaced wholesale: an entry already in it is
+the only inbound edge its note has, so dropping the entry turns that note
+back into an orphan and the next run re-adds it -- the linker would
+oscillate instead of converging. Entries whose note no longer exists are
+pruned, since those would be broken links.
 """
 
 from __future__ import annotations
@@ -23,6 +29,11 @@ HEADING = "## 미연결 노트"
 _RE_BLOCK = re.compile(
     re.escape(MARKER_START) + r".*?" + re.escape(MARKER_END),
     re.DOTALL,
+)
+
+_RE_ENTRY = re.compile(
+    r"^- \[\[(?P<path>[^\]|]+)\|(?P<title>[^\]]*)\]\]\s*$",
+    re.MULTILINE,
 )
 
 _INDEX_NAME = "INDEX.md"
@@ -90,6 +101,20 @@ def render_block(links: list[OrphanLink]) -> str:
     return "\n".join(lines)
 
 
+def _surviving_entries(original: str, vault_path: Path) -> list[tuple[str, str]]:
+    """(note_path, title) already in the managed block, minus deleted notes."""
+    match = _RE_BLOCK.search(original)
+    if not match:
+        return []
+
+    kept: list[tuple[str, str]] = []
+    for entry in _RE_ENTRY.finditer(match.group(0)):
+        note_path = entry.group("path") + ".md"
+        if (vault_path / note_path).exists():
+            kept.append((note_path, entry.group("title")))
+    return kept
+
+
 def apply_links(vault_path: Path, links: list[OrphanLink]) -> list[str]:
     """Write the managed block into every affected INDEX.
 
@@ -103,7 +128,16 @@ def apply_links(vault_path: Path, links: list[OrphanLink]) -> list[str]:
     for index_path, index_links in sorted(by_index.items()):
         path = vault_path / index_path
         original = path.read_text(encoding="utf-8")
-        block = render_block(index_links)
+
+        merged: dict[str, str] = dict(_surviving_entries(original, vault_path))
+        for link in index_links:
+            merged[link.note_path] = link.title
+        block = render_block(
+            [
+                OrphanLink(index_path=index_path, note_path=note_path, title=title)
+                for note_path, title in merged.items()
+            ]
+        )
 
         if _RE_BLOCK.search(original):
             updated = _RE_BLOCK.sub(lambda _m: block, original, count=1)

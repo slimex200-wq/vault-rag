@@ -51,13 +51,19 @@ def _write_lint_cursor(config: VaultConfig, offset: int) -> None:
 
 # Metrics the --strict gate refuses to let grow. A one-off cleanup does not
 # stick unless something fails when the vault slides back.
+#
+# Every gated metric must be a *defect* count whose healthy value is 0.
+# singleton_tag_count is deliberately absent: a tag used once is what a
+# genuinely new topic looks like, so the count rises with normal growth and
+# a never-worse gate on it is guaranteed to go red and stay red. It was the
+# only breach on three consecutive days while real regressions hid behind
+# it. It still shows in the report, where a human can read the trend.
 _GATED_METRICS = (
     "broken_link_count",
     "orphan_count",
     "isolated_count",
     "untagged_count",
     "vocabulary_violation_count",
-    "singleton_tag_count",
 )
 
 
