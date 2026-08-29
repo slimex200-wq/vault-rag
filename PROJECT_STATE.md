@@ -22,8 +22,9 @@ Karpathy-style personal knowledge RAG system for Obsidian vaults.
 
 ## Last Verified
 
-- 2026-04-30: `python -m pytest tests/ -q`, `ruff check .`, and `ruff format --check .` passed.
-- Known gap: live OpenAI/Anthropic API calls were not performed.
+- 2026-08-16: `python -m pytest tests/ -q` (232 passed), `ruff check .`, and `ruff format --check .` passed.
+- 2026-08-16: live Anthropic call performed through the OAuth path in three configurations — store only, store with a deliberately stale `ANTHROPIC_OAUTH_TOKEN`, and env token alone — all returned normally.
+- Known gap: live OpenAI embedding calls were not performed (`embedding_provider` defaults to `local`).
 
 ## Related Vault Notes
 

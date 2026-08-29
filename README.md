@@ -67,9 +67,18 @@ pip install -e ".[dev]"
 
 ## 환경변수
 
+컴파일·Q&A용 Anthropic 토큰은 **호출할 때마다** 다음 순서로 해결된다:
+
+1. GJC 크리덴셜 스토어 (`~/.gjc/agent/agent.db`, 읽기 전용 조회). 구독 OAuth 경로라 호출당 과금이 없다. 위치는 `GJC_CODING_AGENT_DIR` 로 바꿀 수 있다.
+2. `ANTHROPIC_OAUTH_TOKEN` — 그 스토어가 없는 머신용 수동 지정.
+3. `ANTHROPIC_API_KEY` — 위 둘 다 없을 때만. 여기서부터 종량 과금이다.
+
+스토어의 access 토큰은 약 8시간마다 회전한다. 셸 변수에 복사해 둔 값은 하루면 죽으므로, 매 호출마다 스토어를 다시 읽는 것이 `OAuth access token has been revoked` 401 을 막는 유일한 방법이다.
+
 ```bash
-export OPENAI_API_KEY="sk-..."        # 임베딩용 (text-embedding-3-small)
-export ANTHROPIC_API_KEY="sk-ant-..." # 컴파일 + Q&A용 (Claude Sonnet)
+# 구독 OAuth 를 쓸 수 없을 때만 필요하다
+export ANTHROPIC_API_KEY="sk-ant-..."  # 컴파일 + Q&A 폴백 (종량)
+export OPENAI_API_KEY="sk-..."         # embedding_provider="openai" 로 바꿨을 때만 (기본은 로컬 모델, 무과금)
 ```
 
 ## 사용법
